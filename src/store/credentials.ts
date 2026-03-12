@@ -38,6 +38,11 @@ export class CredentialStore {
     this.save()
   }
 
+  delete(origin: string): void {
+    delete this.data[origin]
+    this.save()
+  }
+
   updateBalance(origin: string, balance: number): void {
     const cred = this.data[origin]
     if (cred) {

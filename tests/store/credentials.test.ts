@@ -102,6 +102,20 @@ describe('CredentialStore', () => {
     expect(isEncrypted(raw)).toBe(true)
   })
 
+  it('deletes a credential by origin', () => {
+    store.set('https://api.example.com', cred)
+    expect(store.get('https://api.example.com')).not.toBeUndefined()
+
+    store.delete('https://api.example.com')
+
+    expect(store.get('https://api.example.com')).toBeUndefined()
+    expect(store.count()).toBe(0)
+  })
+
+  it('delete is a no-op for unknown origin', () => {
+    expect(() => store.delete('https://unknown.com')).not.toThrow()
+  })
+
   it('migrates plaintext credentials on first read', async () => {
     mkdirSync(dirname(filePath), { recursive: true })
     writeFileSync(filePath, JSON.stringify({

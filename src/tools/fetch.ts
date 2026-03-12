@@ -72,6 +72,11 @@ export async function handleFetch(
     // Step 3: Credits exhausted (had credentials but got 402)
     const creditsExhausted = !!cred
 
+    // Delete stale credential so next request doesn't send it again
+    if (creditsExhausted) {
+      deps.credentialStore.delete(origin)
+    }
+
     // Step 4: Auto-pay if within budget
     const autoPay = args.autoPay ?? true
     if (!creditsExhausted && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats) {

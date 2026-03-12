@@ -6,6 +6,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     credentialStore: {
       get: vi.fn().mockReturnValue(undefined),
       set: vi.fn(),
+      delete: vi.fn(),
       updateBalance: vi.fn(),
       updateLastUsed: vi.fn(),
     } as unknown as FetchDeps['credentialStore'],
@@ -135,6 +136,7 @@ describe('handleFetch', () => {
       credentialStore: {
         get: vi.fn().mockReturnValue({ macaroon: 'old-mac', preimage: 'old-pre' }),
         set: vi.fn(),
+        delete: vi.fn(),
         updateBalance: vi.fn(),
         updateLastUsed: vi.fn(),
       } as unknown as FetchDeps['credentialStore'],
@@ -150,6 +152,8 @@ describe('handleFetch', () => {
     expect(parsed.message).toContain('no remaining credits')
     // Should NOT auto-pay when creditsExhausted
     expect(deps.payInvoice).not.toHaveBeenCalled()
+    // Should delete stale credential
+    expect((deps.credentialStore as any).delete).toHaveBeenCalledWith('https://api.example.com')
   })
 
   it('respects autoPay: false', async () => {
