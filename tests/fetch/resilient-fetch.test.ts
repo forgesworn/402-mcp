@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SsrfError, TimeoutError, RetryExhaustedError } from '../../src/fetch/errors.js'
+import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError } from '../../src/fetch/errors.js'
 
 // Mock the SSRF guard
 const mockValidateUrl = vi.fn()
@@ -247,6 +247,44 @@ describe('createResilientFetch', () => {
       const secondCall = mockFetch.mock.calls[1]
       expect(secondCall[1].method).toBe('POST')
       expect(secondCall[1].body).toBe('data')
+    })
+
+    it('blocks HTTPS to HTTP downgrade', async () => {
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(new Response(null, {
+          status: 301,
+          headers: { location: 'http://api.example.com/resource' },
+        }))
+
+      const fetch = createResilientFetch(mockFetch, { retries: 0 })
+      await expect(fetch('https://api.example.com/resource', {}, { retries: 0 }))
+        .rejects.toThrow(DowngradeError)
+    })
+
+    it('allows HTTP to HTTPS upgrade', async () => {
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(new Response(null, {
+          status: 301,
+          headers: { location: 'https://api.example.com/resource' },
+        }))
+        .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+
+      const fetch = createResilientFetch(mockFetch, { retries: 0 })
+      const res = await fetch('http://api.example.com/resource', {}, { retries: 0 })
+      expect(res.status).toBe(200)
+    })
+
+    it('allows HTTPS to HTTPS redirect', async () => {
+      const mockFetch = vi.fn()
+        .mockResolvedValueOnce(new Response(null, {
+          status: 301,
+          headers: { location: 'https://other.example.com/resource' },
+        }))
+        .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+
+      const fetch = createResilientFetch(mockFetch, { retries: 0 })
+      const res = await fetch('https://api.example.com/resource', {}, { retries: 0 })
+      expect(res.status).toBe(200)
     })
 
     it('throws after 5 redirects', async () => {

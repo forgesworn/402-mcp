@@ -1,5 +1,5 @@
 import { validateUrl } from './ssrf-guard.js'
-import { SsrfError, TimeoutError, RetryExhaustedError } from './errors.js'
+import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError } from './errors.js'
 
 export interface ResilientFetchOptions {
   timeoutMs?: number
@@ -80,7 +80,7 @@ export function createResilientFetch(
 
       try {
         const response = await fetchWithTimeoutAndRedirects(
-          fetchFn, urlStr, init, timeoutMs, allowPrivate,
+          fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr,
         )
 
         // If retryable status and we have retries left, continue
@@ -115,6 +115,7 @@ async function fetchWithTimeoutAndRedirects(
   init: RequestInit | undefined,
   timeoutMs: number,
   allowPrivate: boolean,
+  originalUrl: string,
 ): Promise<Response> {
   let currentUrl = url
   let currentInit = init ? { ...init } : {}
@@ -158,6 +159,11 @@ async function fetchWithTimeoutAndRedirects(
 
     // Resolve relative URLs
     currentUrl = new URL(location, currentUrl).toString()
+
+    // Block HTTPS-to-HTTP downgrade
+    if (new URL(originalUrl).protocol === 'https:' && new URL(currentUrl).protocol === 'http:') {
+      throw new DowngradeError(originalUrl, currentUrl)
+    }
 
     // SSRF check on redirect target
     await validateUrl(currentUrl, allowPrivate)
