@@ -125,6 +125,12 @@ export function createResilientFetch(
         }
 
         if (globalMaxResponseBytes > 0) {
+          // Fast-reject if Content-Length already exceeds the limit
+          const contentLength = parseInt(response.headers.get('content-length') ?? '', 10)
+          if (Number.isFinite(contentLength) && contentLength > globalMaxResponseBytes) {
+            throw new ResponseTooLargeError(globalMaxResponseBytes)
+          }
+
           const reader = response.body?.getReader()
           if (reader) {
             const chunks: Uint8Array[] = []
