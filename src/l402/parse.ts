@@ -9,13 +9,13 @@ export function parseL402Challenge(header: string): L402Challenge | null {
 
   const params = match[1]
 
-  const macaroonMatch = params.match(/macaroon="?([^",\s]+)"?/)
-  const invoiceMatch = params.match(/invoice="?([^",\s]+)"?/)
+  const macaroonMatch = params.match(/macaroon="([A-Za-z0-9_\-=]+)"|macaroon=([A-Za-z0-9_\-=]+)(?:[,\s]|$)/)
+  const invoiceMatch = params.match(/invoice="(lnbc[A-Za-z0-9]+)"|invoice=(lnbc[A-Za-z0-9]+)(?:[,\s]|$)/)
 
   if (!macaroonMatch || !invoiceMatch) return null
 
   return {
-    macaroon: macaroonMatch[1],
-    invoice: invoiceMatch[1],
+    macaroon: macaroonMatch[1] ?? macaroonMatch[2],
+    invoice: invoiceMatch[1] ?? invoiceMatch[2],
   }
 }

@@ -39,3 +39,30 @@ describe('parseL402Challenge', () => {
     })
   })
 })
+
+describe('strict validation', () => {
+  it('rejects macaroon with invalid characters', () => {
+    const header = 'L402 macaroon="not!valid@chars", invoice="lnbc1234"'
+    const result = parseL402Challenge(header)
+    expect(result).toBeNull()
+  })
+
+  it('rejects macaroon with angle brackets', () => {
+    const header = 'L402 macaroon="abc<>def", invoice="lnbc1234"'
+    const result = parseL402Challenge(header)
+    expect(result).toBeNull()
+  })
+
+  it('accepts valid base64url macaroon', () => {
+    const header = 'L402 macaroon="AgELbG9jYWxob3N0AEI", invoice="lnbc100n1ptest"'
+    const result = parseL402Challenge(header)
+    expect(result).not.toBeNull()
+    expect(result!.macaroon).toBe('AgELbG9jYWxob3N0AEI')
+  })
+
+  it('accepts macaroon with padding chars', () => {
+    const header = 'L402 macaroon="AgELbG9jYWxob3N0AEI=", invoice="lnbc100n1ptest"'
+    const result = parseL402Challenge(header)
+    expect(result).not.toBeNull()
+  })
+})
