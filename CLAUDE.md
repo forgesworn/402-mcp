@@ -16,11 +16,13 @@ npm run typecheck   # tsc --noEmit
 src/
   index.ts              # Entry point: transport setup, tool registration
   config.ts             # Environment variable parsing, defaults
+  fetch/                # Resilient fetch: SSRF guard, timeout, retry
   tools/                # One file per MCP tool (handler + registration)
   wallet/               # Payment implementations (NWC, Cashu melt, human)
   store/                # Persistent JSON stores (credentials, Cashu tokens)
   l402/                 # L402 protocol utilities (parse, detect, cache, bolt11)
 tests/                  # Tests mirror src/ structure (tests/tools/, tests/wallet/, etc.)
+  e2e/                  # Integration tests against in-process toll-booth
 ```
 
 ## Testing
@@ -40,4 +42,11 @@ Tests live in `tests/` (NOT co-located with source). Each handler's `handle*` fu
 - **Git:** commit messages use `type: description` format
 - **Git:** Do NOT include `Co-Authored-By` lines in commits
 - **Tool pattern:** Each tool file exports a `handle*` function (testable) and a `register*Tool` function (MCP wiring)
-- **Zero toll-booth dependency** - works with any L402 server
+- **Zero toll-booth dependency** - works with any L402 server (toll-booth is devDependency only, for integration tests)
+
+## Fetch Resilience
+
+All outbound HTTP uses resilient fetch (timeout, retry, SSRF guard).
+Money-mutating POSTs pass `{ retries: 0 }` to disable retry.
+Polling fetches (pay.ts) also disable retry (the poll loop handles transience).
+Set `SSRF_ALLOW_PRIVATE=true` for local development against localhost.
