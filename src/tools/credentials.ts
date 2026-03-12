@@ -2,19 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CredentialStore } from '../store/credentials.js'
 
 export function handleCredentials(store: CredentialStore) {
-  const credentials = store.list().map(({ origin, paymentHash, creditBalance, storedAt, lastUsed, server }) => ({
-    origin,
-    paymentHash,
-    creditBalance,
-    storedAt,
-    lastUsed,
-    server,
-  }))
-
   return {
     content: [{
       type: 'text' as const,
-      text: JSON.stringify({ credentials }, null, 2),
+      text: JSON.stringify({ credentials: store.listSafe() }, null, 2),
     }],
   }
 }

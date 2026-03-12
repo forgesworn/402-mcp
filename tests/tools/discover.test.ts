@@ -2,6 +2,8 @@ import { describe, it, expect, vi } from 'vitest'
 import { handleDiscover } from '../../src/tools/discover.js'
 import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
+const HASH = '0'.repeat(62) + '7b' // hexHash(123)
+
 describe('handleDiscover', () => {
   it('parses a 402 response and returns challenge details', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
@@ -10,14 +12,14 @@ describe('handleDiscover', () => {
         'www-authenticate': 'L402 macaroon="mac123", invoice="lnbc100n1test"',
         'x-powered-by': 'toll-booth',
       }),
-      json: async () => ({ amount_sats: 10, payment_hash: 'hash123', payment_url: '/pay' }),
+      json: async () => ({ amount_sats: 10, payment_hash: HASH, payment_url: '/pay' }),
     })
 
     const cache = new ChallengeCache()
 
     const result = await handleDiscover(
       { url: 'https://api.example.com/data', method: 'GET' },
-      { fetchFn: mockFetch as unknown as typeof fetch, cache, decodeBolt11: () => ({ costSats: 10, paymentHash: 'hash123', expiry: 3600 }) },
+      { fetchFn: mockFetch as unknown as typeof fetch, cache, decodeBolt11: () => ({ costSats: 10, paymentHash: HASH, expiry: 3600 }) },
     )
 
     const parsed = JSON.parse(result.content[0].text)
@@ -57,10 +59,10 @@ describe('handleDiscover', () => {
 
     await handleDiscover(
       { url: 'https://api.example.com/data', method: 'GET' },
-      { fetchFn: mockFetch as unknown as typeof fetch, cache, decodeBolt11: () => ({ costSats: 10, paymentHash: 'hash123', expiry: 3600 }) },
+      { fetchFn: mockFetch as unknown as typeof fetch, cache, decodeBolt11: () => ({ costSats: 10, paymentHash: HASH, expiry: 3600 }) },
     )
 
-    expect(cache.get('hash123')).toBeDefined()
-    expect(cache.get('hash123')?.macaroon).toBe('mac123')
+    expect(cache.get(HASH)).toBeDefined()
+    expect(cache.get(HASH)?.macaroon).toBe('mac123')
   })
 })

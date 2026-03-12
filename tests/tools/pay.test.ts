@@ -2,6 +2,15 @@ import { describe, it, expect, vi } from 'vitest'
 import { handlePay } from '../../src/tools/pay.js'
 import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
+function hexHash(n: number): string {
+  return n.toString(16).padStart(64, '0')
+}
+
+const HASH_1 = hexHash(1)
+const HASH_2 = hexHash(2)
+const HASH_3 = hexHash(3)
+const HASH_4 = hexHash(4)
+
 const baseDeps = {
   fetchFn: vi.fn() as unknown as typeof fetch,
 }
@@ -12,7 +21,7 @@ describe('handlePay', () => {
     cache.set({
       invoice: 'lnbc...',
       macaroon: 'mac123',
-      paymentHash: 'hash123',
+      paymentHash: HASH_1,
       costSats: 10,
       expiresAt: Date.now() + 3600_000,
       url: 'https://api.example.com/resource',
@@ -26,7 +35,7 @@ describe('handlePay', () => {
     const storeCredential = vi.fn()
 
     const result = await handlePay(
-      { invoice: 'lnbc...', macaroon: 'mac123', paymentHash: 'hash123' },
+      { invoice: 'lnbc...', macaroon: 'mac123', paymentHash: HASH_1 },
       {
         ...baseDeps,
         cache,
@@ -48,7 +57,7 @@ describe('handlePay', () => {
     cache.set({
       invoice: 'cached-invoice',
       macaroon: 'cached-mac',
-      paymentHash: 'hash123',
+      paymentHash: HASH_2,
       costSats: 10,
       expiresAt: Date.now() + 3600_000,
     })
@@ -60,7 +69,7 @@ describe('handlePay', () => {
     }
 
     await handlePay(
-      { paymentHash: 'hash123' },
+      { paymentHash: HASH_2 },
       {
         ...baseDeps,
         cache,
@@ -75,7 +84,7 @@ describe('handlePay', () => {
 
   it('returns error when no wallet available', async () => {
     const result = await handlePay(
-      { invoice: 'lnbc...', macaroon: 'mac123', paymentHash: 'hash123' },
+      { invoice: 'lnbc...', macaroon: 'mac123', paymentHash: HASH_1 },
       {
         ...baseDeps,
         cache: new ChallengeCache(),
@@ -96,7 +105,7 @@ describe('handlePay', () => {
     cache.set({
       invoice: 'lnbc100n1test',
       macaroon: 'mac123',
-      paymentHash: 'hash-no-url',
+      paymentHash: HASH_3,
       costSats: 10,
       expiresAt: Date.now() + 3600_000,
       // no url field
@@ -110,7 +119,7 @@ describe('handlePay', () => {
     const storeCredential = vi.fn()
 
     const result = await handlePay(
-      { paymentHash: 'hash-no-url' },
+      { paymentHash: HASH_3 },
       {
         ...baseDeps,
         cache,
@@ -132,7 +141,7 @@ describe('handlePay', () => {
     cache.set({
       invoice: 'lnbc100n1test',
       macaroon: 'mac123',
-      paymentHash: 'hash-with-url',
+      paymentHash: HASH_4,
       costSats: 10,
       expiresAt: Date.now() + 3600_000,
       url: 'https://api.example.com/data',
@@ -146,7 +155,7 @@ describe('handlePay', () => {
     const storeCredential = vi.fn()
 
     const result = await handlePay(
-      { paymentHash: 'hash-with-url' },
+      { paymentHash: HASH_4 },
       {
         ...baseDeps,
         cache,
@@ -163,7 +172,7 @@ describe('handlePay', () => {
       'https://api.example.com',
       'mac123',
       'abc',
-      'hash-with-url',
+      HASH_4,
       null,
     )
   })
@@ -173,7 +182,7 @@ describe('handlePay', () => {
     cache.set({
       invoice: 'lnbc100n1test',
       macaroon: 'mac123',
-      paymentHash: 'hash123',
+      paymentHash: HASH_1,
       costSats: 10,
       expiresAt: Date.now() + 3600_000,
       url: 'https://api.example.com/data',
@@ -194,7 +203,7 @@ describe('handlePay', () => {
     const storeCredential = vi.fn()
 
     const result = await handlePay(
-      { paymentHash: 'hash123', method: 'human' },
+      { paymentHash: HASH_1, method: 'human' },
       {
         cache,
         resolveWallet: () => humanWallet,
