@@ -85,6 +85,25 @@ describe('isEncrypted', () => {
     expect(isEncrypted({ iv: 'abc', tag: '', ciphertext: 'def' })).toBe(false)
     expect(isEncrypted({ iv: 'abc', tag: 'def', ciphertext: '' })).toBe(false)
   })
+
+  it('returns false when iv has wrong length', () => {
+    // iv should be 24 hex chars (12 bytes); tag 32 hex chars (16 bytes)
+    expect(isEncrypted({ iv: 'aabb', tag: 'a'.repeat(32), ciphertext: 'ff' })).toBe(false)
+  })
+
+  it('returns false when tag has wrong length', () => {
+    expect(isEncrypted({ iv: 'a'.repeat(24), tag: 'aabb', ciphertext: 'ff' })).toBe(false)
+  })
+
+  it('returns false when fields contain non-hex characters', () => {
+    expect(isEncrypted({ iv: 'g'.repeat(24), tag: 'a'.repeat(32), ciphertext: 'ff' })).toBe(false)
+    expect(isEncrypted({ iv: 'a'.repeat(24), tag: 'Z'.repeat(32), ciphertext: 'ff' })).toBe(false)
+    expect(isEncrypted({ iv: 'a'.repeat(24), tag: 'a'.repeat(32), ciphertext: 'XY' })).toBe(false)
+  })
+
+  it('returns true for correctly-sized hex fields', () => {
+    expect(isEncrypted({ iv: 'ab'.repeat(12), tag: 'cd'.repeat(16), ciphertext: 'ef01' })).toBe(true)
+  })
 })
 
 describe('getOrCreateKey', () => {

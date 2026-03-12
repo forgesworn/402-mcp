@@ -1,4 +1,4 @@
-import { validateUrl } from './ssrf-guard.js'
+import { validateUrl, type ResolvedAddress } from './ssrf-guard.js'
 import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError } from './errors.js'
 
 export interface ResilientFetchOptions {
@@ -41,6 +41,37 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * For plain HTTP URLs, rewrite the hostname to the resolved IP address so
+ * that `fetch()` connects to the same IP that passed SSRF validation. This
+ * closes the DNS rebinding TOCTOU window where an attacker's DNS could return
+ * a public IP for validation then a private IP for the actual connection.
+ *
+ * For HTTPS URLs this is not possible because TLS certificate validation
+ * requires the original hostname. HTTPS is inherently resistant to DNS
+ * rebinding; an attacker cannot present a valid certificate for the target
+ * hostname from a private IP.
+ *
+ * Returns `{ pinnedUrl, hostHeader }` where `hostHeader` is the original
+ * Host value to send (only set when the URL was rewritten).
+ */
+function pinUrlToResolvedIp(
+  url: string,
+  resolved: ResolvedAddress | undefined,
+): { pinnedUrl: string; hostHeader: string | undefined } {
+  if (!resolved) return { pinnedUrl: url, hostHeader: undefined }
+
+  const parsed = new URL(url)
+  if (parsed.protocol !== 'http:') return { pinnedUrl: url, hostHeader: undefined }
+
+  const originalHost = parsed.host // includes port if present
+  const { address, family } = resolved
+  const ipLiteral = family === 6 ? `[${address}]` : address
+
+  parsed.hostname = ipLiteral
+  return { pinnedUrl: parsed.toString(), hostHeader: originalHost }
+}
+
+/**
  * Create a resilient fetch function with SSRF protection, timeout, and retry.
  *
  * The returned function is signature-compatible with `typeof fetch` when called
@@ -68,8 +99,10 @@ export function createResilientFetch(
     const backoffMs = options?.backoffMs ?? globalBackoff
     const urlStr = url.toString()
 
-    // SSRF check on the initial URL (never retried)
-    await validateUrl(urlStr, allowPrivate)
+    // SSRF check on the initial URL (never retried).
+    // The resolved address is used to pin HTTP connections to the validated IP,
+    // closing the DNS rebinding TOCTOU window.
+    const resolved = await validateUrl(urlStr, allowPrivate)
 
     const totalAttempts = 1 + retries
     let lastError: Error | undefined
@@ -82,7 +115,7 @@ export function createResilientFetch(
 
       try {
         let response = await fetchWithTimeoutAndRedirects(
-          fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr,
+          fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr, resolved,
         )
 
         // If retryable status and we have retries left, continue
@@ -142,12 +175,17 @@ async function fetchWithTimeoutAndRedirects(
   timeoutMs: number,
   allowPrivate: boolean,
   originalUrl: string,
+  resolved?: ResolvedAddress,
 ): Promise<Response> {
   let currentUrl = url
   let currentInit = init ? { ...init } : {}
   let redirectCount = 0
+  let currentResolved = resolved
 
   while (true) {
+    // Pin HTTP URLs to the validated IP to prevent DNS rebinding
+    const { pinnedUrl, hostHeader } = pinUrlToResolvedIp(currentUrl, currentResolved)
+
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
@@ -157,9 +195,17 @@ async function fetchWithTimeoutAndRedirects(
       redirect: 'manual',
     }
 
+    // When we rewrote the hostname to an IP, send the original Host header
+    // so the upstream server can route the request correctly.
+    if (hostHeader) {
+      const headers = new Headers(fetchInit.headers)
+      headers.set('Host', hostHeader)
+      fetchInit.headers = headers
+    }
+
     let response: Response
     try {
-      response = await fetchFn(currentUrl, fetchInit)
+      response = await fetchFn(pinnedUrl, fetchInit)
     } catch (err) {
       clearTimeout(timeoutId)
       if (controller.signal.aborted) {
@@ -183,7 +229,7 @@ async function fetchWithTimeoutAndRedirects(
     const location = response.headers.get('location')
     if (!location) return response
 
-    // Resolve relative URLs
+    // Resolve relative URLs against the original (non-pinned) URL
     currentUrl = new URL(location, currentUrl).toString()
 
     // Block HTTPS-to-HTTP downgrade
@@ -191,8 +237,8 @@ async function fetchWithTimeoutAndRedirects(
       throw new DowngradeError(originalUrl, currentUrl)
     }
 
-    // SSRF check on redirect target
-    await validateUrl(currentUrl, allowPrivate)
+    // SSRF check on redirect target; capture the resolved address for pinning
+    currentResolved = await validateUrl(currentUrl, allowPrivate)
 
     // 301/302/303 change POST to GET and drop body
     if ([301, 302, 303].includes(response.status)) {

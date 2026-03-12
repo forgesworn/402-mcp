@@ -12,6 +12,7 @@ import { decodeBolt11 } from '../../src/l402/bolt11.js'
 import { parseL402Challenge } from '../../src/l402/parse.js'
 import { detectServer } from '../../src/l402/detect.js'
 import { CredentialStore } from '../../src/store/credentials.js'
+import { SpendTracker } from '../../src/spend-tracker.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -115,6 +116,8 @@ describe('L402 integration flow', () => {
         fetchFn: resilientFetch,
         payInvoice: async () => ({ paid: false, method: 'none' }),
         maxAutoPaySats: 0,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
         parseL402: parseL402Challenge,
         decodeBolt11,
         detectServer,
@@ -173,6 +176,8 @@ describe('L402 integration flow', () => {
         fetchFn: resilientFetch,
         payInvoice: async () => ({ paid: false, method: 'none' }),
         maxAutoPaySats: 0,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
         parseL402: parseL402Challenge,
         decodeBolt11,
         detectServer,
@@ -222,6 +227,8 @@ describe('L402 integration flow', () => {
       fetchFn: resilientFetch,
       payInvoice: async () => ({ paid: false, method: 'none' } as const),
       maxAutoPaySats: 0,
+      maxSpendPerMinuteSats: 10000,
+      spendTracker: new SpendTracker(),
       parseL402: parseL402Challenge,
       decodeBolt11,
       detectServer,
@@ -257,6 +264,8 @@ describe('L402 integration flow', () => {
         payInvoice: async () => ({ paid: false, method: 'none' }),
         storeCredential: () => {},
         decodeBolt11,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
       },
     )
 

@@ -74,15 +74,19 @@ export async function handlePay(
 
   const result = await wallet.payInvoice(invoice)
 
+  let credentialsStored = false
   if (result.paid && result.preimage) {
     const origin = cachedUrl ? new URL(cachedUrl).origin : ''
-    deps.storeCredential(
-      origin,
-      macaroon,
-      result.preimage,
-      paymentHash ?? '',
-      null,
-    )
+    if (origin) {
+      deps.storeCredential(
+        origin,
+        macaroon,
+        result.preimage,
+        paymentHash ?? '',
+        null,
+      )
+      credentialsStored = true
+    }
 
     // Remove from cache
     if (paymentHash) deps.cache.delete(paymentHash)
@@ -94,7 +98,7 @@ export async function handlePay(
       text: JSON.stringify({
         paid: result.paid,
         preimage: result.preimage,
-        credentialsStored: result.paid,
+        credentialsStored,
         method: result.method,
         reason: result.reason,
       }, null, 2),

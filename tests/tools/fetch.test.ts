@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleFetch, type FetchDeps } from '../../src/tools/fetch.js'
+import { SpendTracker } from '../../src/spend-tracker.js'
 
 function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
   return {
@@ -13,6 +14,8 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     fetchFn: vi.fn() as unknown as typeof fetch,
     payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'none' }),
     maxAutoPaySats: 100,
+    maxSpendPerMinuteSats: 10000,
+    spendTracker: new SpendTracker(),
     parseL402: vi.fn().mockReturnValue(null),
     decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
     detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
@@ -173,6 +176,48 @@ describe('handleFetch', () => {
     expect(parsed.costSats).toBe(10)
     expect(parsed.message).toContain('autoPay disabled')
     expect(deps.payInvoice).not.toHaveBeenCalled()
+  })
+
+  it('ignores non-numeric x-credit-balance header', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(
+        mockResponse(200, { 'x-credit-balance': 'foo' }, 'OK'),
+      ) as unknown as typeof fetch,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data' }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(parsed.creditsRemaining).toBeNull()
+    expect(deps.credentialStore.updateBalance).not.toHaveBeenCalled()
+  })
+
+  it('ignores NaN x-credit-balance header', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(
+        mockResponse(200, { 'x-credit-balance': 'NaN' }, 'OK'),
+      ) as unknown as typeof fetch,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data' }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(parsed.creditsRemaining).toBeNull()
+    expect(deps.credentialStore.updateBalance).not.toHaveBeenCalled()
+  })
+
+  it('ignores Infinity x-credit-balance header', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(
+        mockResponse(200, { 'x-credit-balance': 'Infinity' }, 'OK'),
+      ) as unknown as typeof fetch,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data' }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(parsed.creditsRemaining).toBeNull()
+    expect(deps.credentialStore.updateBalance).not.toHaveBeenCalled()
   })
 
   it('returns error on network failure', async () => {

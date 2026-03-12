@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi, type MockInstance } from 'vitest'
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs'
 import { join, dirname } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -117,12 +117,13 @@ describe('CredentialStore', () => {
   })
 
   it('migrates plaintext credentials on first read', async () => {
+    const recentDate = new Date().toISOString()
     mkdirSync(dirname(filePath), { recursive: true })
     writeFileSync(filePath, JSON.stringify({
       'https://old.example.com': {
         macaroon: 'old-mac', preimage: 'old-pre', paymentHash: 'old-hash',
-        creditBalance: 50, storedAt: '2026-01-01T00:00:00Z',
-        lastUsed: '2026-01-01T00:00:00Z', server: null,
+        creditBalance: 50, storedAt: recentDate,
+        lastUsed: recentDate, server: null,
       },
     }))
     const store = new CredentialStore(filePath)
@@ -131,5 +132,57 @@ describe('CredentialStore', () => {
     expect(cred?.macaroon).toBe('old-mac')
     const raw = JSON.parse(readFileSync(filePath, 'utf8'))
     expect(isEncrypted(raw)).toBe(true)
+  })
+
+  describe('credential TTL', () => {
+    let dateNowSpy: MockInstance
+
+    afterEach(() => {
+      dateNowSpy?.mockRestore()
+    })
+
+    it('returns credential when within MAX_AGE_MS', () => {
+      const now = Date.now()
+      const recentCred: StoredCredential = {
+        ...cred,
+        storedAt: new Date(now - 1000).toISOString(),
+      }
+      store.set('https://fresh.com', recentCred)
+      expect(store.get('https://fresh.com')).toBeDefined()
+    })
+
+    it('expires and deletes credential older than MAX_AGE_MS', () => {
+      const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000)
+      const oldCred: StoredCredential = {
+        ...cred,
+        storedAt: new Date(eightDaysAgo).toISOString(),
+      }
+      store.set('https://stale.com', oldCred)
+      expect(store.get('https://stale.com')).toBeUndefined()
+      expect(store.count()).toBe(0)
+    })
+
+    it('expires credential at exactly MAX_AGE_MS + 1', () => {
+      const now = Date.now()
+      const storedAt = now - CredentialStore.MAX_AGE_MS - 1
+      const oldCred: StoredCredential = {
+        ...cred,
+        storedAt: new Date(storedAt).toISOString(),
+      }
+      store.set('https://edge.com', oldCred)
+      expect(store.get('https://edge.com')).toBeUndefined()
+    })
+
+    it('keeps credential at exactly MAX_AGE_MS', () => {
+      const now = Date.now()
+      dateNowSpy = vi.spyOn(Date, 'now').mockReturnValue(now)
+      const storedAt = now - CredentialStore.MAX_AGE_MS
+      const boundaryCredential: StoredCredential = {
+        ...cred,
+        storedAt: new Date(storedAt).toISOString(),
+      }
+      store.set('https://boundary.com', boundaryCredential)
+      expect(store.get('https://boundary.com')).toBeDefined()
+    })
   })
 })

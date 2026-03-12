@@ -5,15 +5,24 @@ import type { L402Challenge } from '../l402/parse.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ServerInfo } from '../l402/detect.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
+import type { SpendTracker } from '../spend-tracker.js'
 
 export interface FetchDeps {
   credentialStore: CredentialStore
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
   payInvoice: (invoice: string) => Promise<{ paid: boolean; preimage?: string; method: string }>
   maxAutoPaySats: number
+  maxSpendPerMinuteSats: number
+  spendTracker: SpendTracker
   parseL402: (header: string) => L402Challenge | null
   decodeBolt11: (invoice: string) => DecodedInvoice
   detectServer: (headers: Headers, body: unknown) => ServerInfo
+}
+
+function parseBalance(value: string | null): number | null {
+  if (value === null) return null
+  const parsed = parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : null
 }
 
 export async function handleFetch(
@@ -39,9 +48,9 @@ export async function handleFetch(
 
     // Success - update balance and return
     if (response.status !== 402) {
-      const balanceHeader = response.headers.get('x-credit-balance')
-      if (balanceHeader) {
-        deps.credentialStore.updateBalance(origin, parseInt(balanceHeader, 10))
+      const balance = parseBalance(response.headers.get('x-credit-balance'))
+      if (balance !== null) {
+        deps.credentialStore.updateBalance(origin, balance)
       }
 
       const body = await response.text()
@@ -52,7 +61,7 @@ export async function handleFetch(
             status: response.status,
             headers: Object.fromEntries(response.headers.entries()),
             body,
-            creditsRemaining: balanceHeader ? parseInt(balanceHeader, 10) : null,
+            creditsRemaining: balance,
             satsPaid: 0,
           }, null, 2),
         }],
@@ -79,10 +88,14 @@ export async function handleFetch(
 
     // Step 4: Auto-pay if within budget
     const autoPay = args.autoPay ?? true
-    if (!creditsExhausted && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats) {
+    const spendLimitHit = decoded.costSats !== null && deps.spendTracker.wouldExceed(decoded.costSats, deps.maxSpendPerMinuteSats)
+    if (!creditsExhausted && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats && !spendLimitHit) {
       const payResult = await deps.payInvoice(challenge.invoice)
 
       if (payResult.paid && payResult.preimage) {
+        // Record spend for rate limiting
+        deps.spendTracker.record(decoded.costSats!)
+
         // Store credential and retry
         deps.credentialStore.set(origin, {
           macaroon: challenge.macaroon,
@@ -104,9 +117,9 @@ export async function handleFetch(
           body: args.body,
         })
 
-        const balanceHeader = retryResponse.headers.get('x-credit-balance')
-        if (balanceHeader) {
-          deps.credentialStore.updateBalance(origin, parseInt(balanceHeader, 10))
+        const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
+        if (retryBalance !== null) {
+          deps.credentialStore.updateBalance(origin, retryBalance)
         }
 
         const retryBody = await retryResponse.text()
@@ -117,7 +130,7 @@ export async function handleFetch(
               status: retryResponse.status,
               headers: Object.fromEntries(retryResponse.headers.entries()),
               body: retryBody,
-              creditsRemaining: balanceHeader ? parseInt(balanceHeader, 10) : null,
+              creditsRemaining: retryBalance,
               satsPaid: decoded.costSats,
             }, null, 2),
           }],
@@ -137,7 +150,9 @@ export async function handleFetch(
           creditsExhausted,
           message: creditsExhausted
             ? `Stored credentials for ${origin} have no remaining credits. New payment required.`
-            : `Payment of ${decoded.costSats} sats required. ${!autoPay ? 'autoPay disabled.' : `Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`}`,
+            : spendLimitHit
+              ? 'Per-minute spend limit reached.'
+              : `Payment of ${decoded.costSats} sats required. ${!autoPay ? 'autoPay disabled.' : `Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`}`,
         }, null, 2),
       }],
     }

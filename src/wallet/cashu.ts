@@ -15,7 +15,7 @@ export function createCashuWallet(tokenStore: CashuTokenStore): WalletProvider {
       }
 
       try {
-        const { Wallet, getDecodedToken } = await import('@cashu/cashu-ts')
+        const { Wallet, getDecodedToken, getEncodedTokenV4 } = await import('@cashu/cashu-ts')
 
         // Decode the token to get proofs ({ mint, proofs, unit })
         const decoded = getDecodedToken(token.token)
@@ -38,15 +38,23 @@ export function createCashuWallet(tokenStore: CashuTokenStore): WalletProvider {
         }
 
         // Use wallet.send() to select proofs properly, accounting for fees
-        const { send: proofsToSend } = await wallet.send(amountNeeded, proofs, {
+        const { send: proofsToSend, keep: proofsToKeep } = await wallet.send(amountNeeded, proofs, {
           includeFees: true,
         })
 
         const meltResponse = await wallet.meltProofs(meltQuote, proofsToSend)
 
         if (meltResponse.quote.state === 'PAID') {
-          // Store any change proofs back (proofsToKeep + meltResponse.change)
-          // For simplicity we don't re-add partial change; the token was consumed
+          // Re-add any change proofs from the melt and kept proofs from send()
+          // to avoid silent funds loss
+          restoreChangeProofs(
+            tokenStore,
+            getEncodedTokenV4,
+            token.mint,
+            proofsToKeep,
+            meltResponse.change,
+          )
+
           return {
             paid: true,
             preimage: meltResponse.quote.payment_preimage ?? undefined,
@@ -63,5 +71,38 @@ export function createCashuWallet(tokenStore: CashuTokenStore): WalletProvider {
         return { paid: false, method: 'cashu', reason: String(err) }
       }
     },
+  }
+}
+
+/**
+ * Encodes leftover proofs back into a Cashu token and adds them to the store.
+ * Handles both `keep` proofs (from wallet.send() coin selection) and `change`
+ * proofs (from overpaid melt fee reserves). Failures are logged but never
+ * propagate; the payment has already succeeded at this point.
+ */
+function restoreChangeProofs(
+  tokenStore: CashuTokenStore,
+  encodeFn: (token: { mint: string; proofs: Array<{ id: string; amount: number; secret: string; C: string }> }) => string,
+  mint: string,
+  keepProofs: Array<{ id: string; amount: number; secret: string; C: string }>,
+  changeProofs: Array<{ id: string; amount: number; secret: string; C: string }>,
+): void {
+  const allProofs = [...keepProofs, ...changeProofs]
+  if (allProofs.length === 0) return
+
+  try {
+    const totalSats = allProofs.reduce((sum, p) => sum + p.amount, 0)
+    if (totalSats <= 0) return
+
+    const encoded = encodeFn({ mint, proofs: allProofs })
+    tokenStore.add({
+      token: encoded,
+      mint,
+      amountSats: totalSats,
+      addedAt: new Date().toISOString(),
+    })
+  } catch (err) {
+    // Payment already succeeded; log but don't fail
+    console.warn('[l402-mcp] Failed to restore change proofs to token store:', err)
   }
 }

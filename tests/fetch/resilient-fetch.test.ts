@@ -15,7 +15,9 @@ describe('createResilientFetch', () => {
   beforeEach(() => {
     mockFetch = vi.fn()
     mockValidateUrl.mockReset()
-    mockValidateUrl.mockResolvedValue(undefined)
+    // By default return a resolved address (simulates public IP validation).
+    // Tests for allowPrivate mode override this to return undefined.
+    mockValidateUrl.mockResolvedValue({ address: '93.184.216.34', family: 4 })
   })
 
   describe('SSRF guard integration', () => {
@@ -27,6 +29,51 @@ describe('createResilientFetch', () => {
       expect(mockFetch).toHaveBeenCalled()
     })
 
+    it('pins HTTP URL to resolved IP for fetch', async () => {
+      mockValidateUrl.mockResolvedValue({ address: '93.184.216.34', family: 4 })
+      mockFetch.mockResolvedValue(new Response('ok', { status: 200 }))
+      const resilientFetch = createResilientFetch(mockFetch, { ssrfAllowPrivate: false })
+      await resilientFetch('http://example.com/path')
+
+      // fetch should receive the IP-pinned URL
+      const fetchedUrl = mockFetch.mock.calls[0][0]
+      expect(fetchedUrl).toBe('http://93.184.216.34/path')
+
+      // Host header should carry the original hostname
+      const fetchInit = mockFetch.mock.calls[0][1]
+      const headers = new Headers(fetchInit.headers)
+      expect(headers.get('Host')).toBe('example.com')
+    })
+
+    it('pins HTTP URL to resolved IPv6 address', async () => {
+      mockValidateUrl.mockResolvedValue({ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 })
+      mockFetch.mockResolvedValue(new Response('ok', { status: 200 }))
+      const resilientFetch = createResilientFetch(mockFetch, { ssrfAllowPrivate: false })
+      await resilientFetch('http://example.com/path')
+
+      const fetchedUrl = mockFetch.mock.calls[0][0]
+      expect(fetchedUrl).toBe('http://[2606:2800:220:1:248:1893:25c8:1946]/path')
+
+      const fetchInit = mockFetch.mock.calls[0][1]
+      const headers = new Headers(fetchInit.headers)
+      expect(headers.get('Host')).toBe('example.com')
+    })
+
+    it('does not rewrite HTTPS URLs (TLS requires original hostname)', async () => {
+      mockValidateUrl.mockResolvedValue({ address: '93.184.216.34', family: 4 })
+      mockFetch.mockResolvedValue(new Response('ok', { status: 200 }))
+      const resilientFetch = createResilientFetch(mockFetch, { ssrfAllowPrivate: false })
+      await resilientFetch('https://example.com/path')
+
+      const fetchedUrl = mockFetch.mock.calls[0][0]
+      expect(fetchedUrl).toBe('https://example.com/path')
+
+      // No Host header override needed
+      const fetchInit = mockFetch.mock.calls[0][1]
+      const headers = new Headers(fetchInit.headers)
+      expect(headers.get('Host')).toBeNull()
+    })
+
     it('does not fetch if SSRF guard throws', async () => {
       mockValidateUrl.mockRejectedValue(new SsrfError('private IP', 'http://10.0.0.1'))
       const resilientFetch = createResilientFetch(mockFetch, { ssrfAllowPrivate: false })
@@ -35,10 +82,16 @@ describe('createResilientFetch', () => {
     })
 
     it('passes ssrfAllowPrivate to validateUrl', async () => {
+      mockValidateUrl.mockResolvedValue(undefined) // allowPrivate returns undefined
       mockFetch.mockResolvedValue(new Response('ok', { status: 200 }))
       const resilientFetch = createResilientFetch(mockFetch, { ssrfAllowPrivate: true })
       await resilientFetch('http://localhost:3000')
       expect(mockValidateUrl).toHaveBeenCalledWith('http://localhost:3000', true)
+
+      // No pinning when allowPrivate (resolved is undefined);
+      // URL passes through as-is (no URL parsing/reconstruction)
+      const fetchedUrl = mockFetch.mock.calls[0][0]
+      expect(fetchedUrl).toBe('http://localhost:3000')
     })
   })
 
@@ -228,6 +281,9 @@ describe('createResilientFetch', () => {
       const secondCall = mockFetch.mock.calls[1]
       expect(secondCall[1].method).toBe('GET')
       expect(secondCall[1].body).toBeUndefined()
+      // Host header should be set since this is HTTP with IP pinning
+      const headers = new Headers(secondCall[1].headers)
+      expect(headers.get('Host')).toBe('example.com')
     })
 
     it('preserves POST on 307 redirect', async () => {

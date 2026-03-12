@@ -3,12 +3,15 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { WalletMethod } from '../wallet/types.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
+import type { SpendTracker } from '../spend-tracker.js'
 
 export interface BuyCreditsDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
   payInvoice: (invoice: string, method?: WalletMethod) => Promise<{ paid: boolean; preimage?: string; method: string }>
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string) => void
   decodeBolt11: (invoice: string) => DecodedInvoice
+  maxSpendPerMinuteSats: number
+  spendTracker: SpendTracker
 }
 
 export async function handleBuyCredits(
@@ -55,9 +58,21 @@ export async function handleBuyCredits(
     const macaroon = data.macaroon as string
     const creditSats = data.credit_sats as number
 
+    // Check per-minute spend limit before paying
+    if (deps.spendTracker.wouldExceed(args.amountSats, deps.maxSpendPerMinuteSats)) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ error: 'Per-minute spend limit reached.' }),
+        }],
+        isError: true as const,
+      }
+    }
+
     const payResult = await deps.payInvoice(invoice, args.method)
 
     if (payResult.paid && payResult.preimage) {
+      deps.spendTracker.record(args.amountSats)
       const decoded = deps.decodeBolt11(invoice)
       deps.storeCredential(origin, macaroon, payResult.preimage, decoded.paymentHash ?? '')
 

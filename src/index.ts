@@ -23,6 +23,7 @@ import { registerBalanceTool } from './tools/balance.js'
 import { registerBuyCreditsTool } from './tools/buy-credits.js'
 import { registerRedeemCashuTool } from './tools/redeem-cashu.js'
 import { createResilientFetch } from './fetch/resilient-fetch.js'
+import { SpendTracker } from './spend-tracker.js'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../package.json') as { version: string }
@@ -42,6 +43,7 @@ await credentialStore.init()
 const cashuTokenStore = config.cashuTokensPath ? new CashuTokenStore(config.cashuTokensPath) : undefined
 if (cashuTokenStore) await cashuTokenStore.init()
 const challengeCache = new ChallengeCache()
+const spendTracker = new SpendTracker()
 
 // Wallet providers (priority order: NWC > Cashu > human)
 const walletProviders: WalletProvider[] = []
@@ -120,6 +122,8 @@ registerFetchTool(server, {
   fetchFn: resilientFetch,
   payInvoice,
   maxAutoPaySats: config.maxAutoPaySats,
+  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+  spendTracker,
   parseL402: parseL402Challenge,
   decodeBolt11,
   detectServer,
@@ -142,6 +146,8 @@ registerBuyCreditsTool(server, {
   storeCredential: (origin, macaroon, preimage, paymentHash) =>
     storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
   decodeBolt11,
+  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+  spendTracker,
 })
 
 registerRedeemCashuTool(server, {
@@ -164,7 +170,15 @@ if (config.transport === 'http') {
   app.use(express.json({ limit: '100kb' }))
 
   app.get('/health', (_req, res) => {
-    res.json({ status: 'ok', server: 'l402-mcp', version })
+    res.json({
+      status: 'ok',
+      server: 'l402-mcp',
+      version,
+      credentialCount: credentialStore.count(),
+      cashuBalanceSats: cashuTokenStore?.totalBalance() ?? 0,
+      nwcConfigured: !!config.nwcUri,
+      uptime: process.uptime(),
+    })
   })
 
   const transport = new StreamableHTTPServerTransport({
@@ -182,13 +196,14 @@ if (config.transport === 'http') {
     console.error('Warning: HTTP transport is intended for local/trusted networks only. For public exposure, use a reverse proxy with TLS, rate limiting, and authentication.')
   })
 
-  const shutdown = () => {
+  const shutdown = async () => {
     console.error('Shutting down gracefully…')
+    await server.close()
     httpServer.close(() => process.exit(0))
     setTimeout(() => process.exit(1), 5000).unref()
   }
-  process.on('SIGTERM', shutdown)
-  process.on('SIGINT', shutdown)
+  process.on('SIGTERM', () => void shutdown())
+  process.on('SIGINT', () => void shutdown())
 } else {
   const { StdioServerTransport } = await import(
     '@modelcontextprotocol/sdk/server/stdio.js'

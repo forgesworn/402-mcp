@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleBuyCredits } from '../../src/tools/buy-credits.js'
+import { SpendTracker } from '../../src/spend-tracker.js'
 
 describe('handleBuyCredits', () => {
   it('discovers tiers when amountSats is omitted', async () => {
@@ -24,6 +25,8 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
       },
     )
 
@@ -46,6 +49,8 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
       },
     )
 
@@ -75,6 +80,8 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential,
         decodeBolt11,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
       },
     )
 
@@ -106,6 +113,8 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
       },
     )
 

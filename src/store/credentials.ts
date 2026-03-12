@@ -17,6 +17,9 @@ export interface CredentialEntry extends StoredCredential {
 }
 
 export class CredentialStore {
+  /** Credentials older than 7 days are automatically purged on access. */
+  static readonly MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
+
   private data: Record<string, StoredCredential> = {}
   private key: Buffer | null = null
 
@@ -30,7 +33,13 @@ export class CredentialStore {
   }
 
   get(origin: string): StoredCredential | undefined {
-    return this.data[origin]
+    const cred = this.data[origin]
+    if (!cred) return undefined
+    if (Date.now() - new Date(cred.storedAt).getTime() > CredentialStore.MAX_AGE_MS) {
+      this.delete(origin)
+      return undefined
+    }
+    return cred
   }
 
   set(origin: string, credential: StoredCredential): void {

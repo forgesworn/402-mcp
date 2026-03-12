@@ -17,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "start": "node build/index.js",
     "start:http": "TRANSPORT=http node build/index.js",
-    "prepublishOnly": "npm run build && npm test"
+    "prepublishOnly": "npm run typecheck && npm run build && npm test"
   },
   "dependencies": {
     "@cashu/cashu-ts": "^3.5.0",
@@ -58,7 +58,8 @@
   },
   "files": [
     "build",
-    "LICENSE"
+    "LICENSE",
+    "README.md"
   ],
   "license": "MIT"
 }

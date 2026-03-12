@@ -7,6 +7,9 @@ const SERVICE = 'l402-mcp'
 const ACCOUNT = 'encryption-key'
 const ALGORITHM = 'aes-256-gcm'
 const IV_BYTES = 12
+const HEX_RE = /^[0-9a-f]+$/
+const IV_HEX_LEN = 24   // 12 bytes = 24 hex chars
+const TAG_HEX_LEN = 32  // 16 bytes = 32 hex chars
 const FALLBACK_KEY_PATH = join(homedir(), '.l402-mcp', 'encryption.key')
 
 export interface EncryptedPayload {
@@ -40,8 +43,9 @@ export function decrypt(payload: EncryptedPayload, key: Buffer): string {
 export function isEncrypted(data: unknown): data is EncryptedPayload {
   if (data === null || data === undefined || typeof data !== 'object' || Array.isArray(data)) return false
   const obj = data as Record<string, unknown>
-  return typeof obj.iv === 'string' && typeof obj.tag === 'string' && typeof obj.ciphertext === 'string'
-    && obj.iv.length > 0 && obj.tag.length > 0 && obj.ciphertext.length > 0
+  if (typeof obj.iv !== 'string' || typeof obj.tag !== 'string' || typeof obj.ciphertext !== 'string') return false
+  if (obj.iv.length !== IV_HEX_LEN || obj.tag.length !== TAG_HEX_LEN || obj.ciphertext.length === 0) return false
+  return HEX_RE.test(obj.iv) && HEX_RE.test(obj.tag) && HEX_RE.test(obj.ciphertext)
 }
 
 function loadOrCreateFallbackKey(): Buffer {

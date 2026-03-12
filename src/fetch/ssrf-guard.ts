@@ -24,8 +24,26 @@ function isBlockedIp(address: string, family: number): string | null {
   return null
 }
 
-export async function validateUrl(url: string, allowPrivate = false): Promise<void> {
-  if (allowPrivate) return
+export interface ResolvedAddress {
+  address: string
+  family: number
+}
+
+/**
+ * Validate a URL against SSRF rules and return the resolved IP address.
+ *
+ * Returns the DNS-resolved address so callers can pin the connection to the
+ * validated IP, closing the DNS rebinding TOCTOU window for plain HTTP.
+ * For HTTPS the caller cannot rewrite the hostname (TLS certificate validation
+ * requires the original hostname), but HTTPS is inherently resistant to DNS
+ * rebinding because the attacker cannot present a valid TLS certificate for
+ * the target hostname from a private IP.
+ *
+ * When `allowPrivate` is true, no resolution or validation is performed and
+ * `undefined` is returned.
+ */
+export async function validateUrl(url: string, allowPrivate = false): Promise<ResolvedAddress | undefined> {
+  if (allowPrivate) return undefined
 
   let parsed: URL
   try {
@@ -45,4 +63,6 @@ export async function validateUrl(url: string, allowPrivate = false): Promise<vo
   if (reason) {
     throw new SsrfError(reason, url)
   }
+
+  return { address, family }
 }

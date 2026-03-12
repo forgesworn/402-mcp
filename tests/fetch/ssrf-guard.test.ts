@@ -15,14 +15,16 @@ beforeEach(() => {
 
 describe('validateUrl', () => {
   describe('scheme validation', () => {
-    it('allows http URLs', async () => {
+    it('allows http URLs and returns resolved address', async () => {
       mockLookup.mockResolvedValue({ address: '93.184.216.34', family: 4 })
-      await expect(validateUrl('http://example.com')).resolves.not.toThrow()
+      const result = await validateUrl('http://example.com')
+      expect(result).toEqual({ address: '93.184.216.34', family: 4 })
     })
 
-    it('allows https URLs', async () => {
+    it('allows https URLs and returns resolved address', async () => {
       mockLookup.mockResolvedValue({ address: '93.184.216.34', family: 4 })
-      await expect(validateUrl('https://example.com')).resolves.not.toThrow()
+      const result = await validateUrl('https://example.com')
+      expect(result).toEqual({ address: '93.184.216.34', family: 4 })
     })
 
     it('rejects file:// scheme', async () => {
@@ -81,21 +83,24 @@ describe('validateUrl', () => {
   })
 
   describe('public IPs allowed', () => {
-    it('allows public IPv4', async () => {
+    it('allows public IPv4 and returns resolved address', async () => {
       mockLookup.mockResolvedValue({ address: '93.184.216.34', family: 4 })
-      await expect(validateUrl('http://example.com')).resolves.not.toThrow()
+      const result = await validateUrl('http://example.com')
+      expect(result).toEqual({ address: '93.184.216.34', family: 4 })
     })
 
-    it('allows public IPv6', async () => {
+    it('allows public IPv6 and returns resolved address', async () => {
       mockLookup.mockResolvedValue({ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 })
-      await expect(validateUrl('http://example.com')).resolves.not.toThrow()
+      const result = await validateUrl('http://example.com')
+      expect(result).toEqual({ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 })
     })
   })
 
   describe('bypass', () => {
-    it('allows private IPs when allowPrivate is true', async () => {
-      mockLookup.mockResolvedValue({ address: '127.0.0.1', family: 4 })
-      await expect(validateUrl('http://localhost', true)).resolves.not.toThrow()
+    it('returns undefined when allowPrivate is true (no DNS resolution)', async () => {
+      const result = await validateUrl('http://localhost', true)
+      expect(result).toBeUndefined()
+      expect(mockLookup).not.toHaveBeenCalled()
     })
   })
 })
