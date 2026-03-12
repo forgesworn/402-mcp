@@ -54,8 +54,8 @@ function loadOrCreateFallbackKey(): Buffer {
   }
   const newKey = randomBytes(32)
   mkdirSync(dirname(FALLBACK_KEY_PATH), { recursive: true })
-  writeFileSync(FALLBACK_KEY_PATH, newKey.toString('hex'))
-  try { chmodSync(FALLBACK_KEY_PATH, 0o600) } catch { /* Windows */ }
+  writeFileSync(FALLBACK_KEY_PATH, newKey.toString('hex'), { mode: 0o600 })
+  try { chmodSync(FALLBACK_KEY_PATH, 0o600) } catch { /* Windows safety net */ }
   return newKey
 }
 

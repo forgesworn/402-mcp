@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs'
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, chmodSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { getOrCreateKey, encrypt, decrypt, isEncrypted, type EncryptedPayload } from './encryption.js'
 
@@ -76,6 +76,18 @@ export class CredentialStore {
     }))
   }
 
+  /** List credentials without exposing secret material (macaroon, preimage). */
+  listSafe(): Array<Omit<CredentialEntry, 'macaroon' | 'preimage'>> {
+    return Object.entries(this.data).map(([origin, cred]) => ({
+      origin,
+      paymentHash: cred.paymentHash,
+      creditBalance: cred.creditBalance,
+      storedAt: cred.storedAt,
+      lastUsed: cred.lastUsed,
+      server: cred.server,
+    }))
+  }
+
   count(): number {
     return Object.keys(this.data).length
   }
@@ -101,12 +113,15 @@ export class CredentialStore {
       mkdirSync(dir, { recursive: true })
     }
     const json = JSON.stringify(this.data, null, 2)
-    if (this.key) {
-      const payload = encrypt(json, this.key)
-      writeFileSync(this.path, JSON.stringify(payload, null, 2))
-    } else {
-      writeFileSync(this.path, json)
-    }
-    try { chmodSync(this.path, 0o600) } catch { /* Windows */ }
+    const content = this.key
+      ? JSON.stringify(encrypt(json, this.key), null, 2)
+      : json
+
+    // Atomic write: write to temp file with restricted permissions, then rename.
+    // renameSync is atomic on POSIX, preventing data loss on crash.
+    const tmpPath = this.path + '.tmp'
+    writeFileSync(tmpPath, content, { mode: 0o600 })
+    renameSync(tmpPath, this.path)
+    try { chmodSync(this.path, 0o600) } catch { /* Windows safety net */ }
   }
 }
