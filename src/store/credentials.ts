@@ -32,10 +32,25 @@ export class CredentialStore {
     this.load()
   }
 
+  private isExpired(cred: StoredCredential): boolean {
+    return Date.now() - new Date(cred.storedAt).getTime() > CredentialStore.MAX_AGE_MS
+  }
+
+  private purgeExpired(): void {
+    let changed = false
+    for (const [origin, cred] of Object.entries(this.data)) {
+      if (this.isExpired(cred)) {
+        delete this.data[origin]
+        changed = true
+      }
+    }
+    if (changed) this.save()
+  }
+
   get(origin: string): StoredCredential | undefined {
     const cred = this.data[origin]
     if (!cred) return undefined
-    if (Date.now() - new Date(cred.storedAt).getTime() > CredentialStore.MAX_AGE_MS) {
+    if (this.isExpired(cred)) {
       this.delete(origin)
       return undefined
     }
@@ -54,22 +69,27 @@ export class CredentialStore {
 
   updateBalance(origin: string, balance: number): void {
     const cred = this.data[origin]
-    if (cred) {
-      cred.creditBalance = balance
-      cred.lastUsed = new Date().toISOString()
-      this.save()
+    if (!cred || this.isExpired(cred)) {
+      if (cred) this.delete(origin)
+      return
     }
+    cred.creditBalance = balance
+    cred.lastUsed = new Date().toISOString()
+    this.save()
   }
 
   updateLastUsed(origin: string): void {
     const cred = this.data[origin]
-    if (cred) {
-      cred.lastUsed = new Date().toISOString()
-      this.save()
+    if (!cred || this.isExpired(cred)) {
+      if (cred) this.delete(origin)
+      return
     }
+    cred.lastUsed = new Date().toISOString()
+    this.save()
   }
 
   list(): CredentialEntry[] {
+    this.purgeExpired()
     return Object.entries(this.data).map(([origin, cred]) => ({
       origin,
       ...cred,
@@ -78,6 +98,7 @@ export class CredentialStore {
 
   /** List credentials without exposing secret material (macaroon, preimage). */
   listSafe(): Array<Omit<CredentialEntry, 'macaroon' | 'preimage'>> {
+    this.purgeExpired()
     return Object.entries(this.data).map(([origin, cred]) => ({
       origin,
       paymentHash: cred.paymentHash,

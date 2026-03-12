@@ -184,5 +184,42 @@ describe('CredentialStore', () => {
       store.set('https://boundary.com', boundaryCredential)
       expect(store.get('https://boundary.com')).toBeDefined()
     })
+
+    it('list() excludes expired credentials', () => {
+      const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000)
+      store.set('https://fresh.com', { ...cred, storedAt: new Date().toISOString() })
+      store.set('https://stale.com', { ...cred, storedAt: new Date(eightDaysAgo).toISOString() })
+
+      const all = store.list()
+      expect(all).toHaveLength(1)
+      expect(all[0].origin).toBe('https://fresh.com')
+    })
+
+    it('listSafe() excludes expired credentials', () => {
+      const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000)
+      store.set('https://fresh.com', { ...cred, storedAt: new Date().toISOString() })
+      store.set('https://stale.com', { ...cred, storedAt: new Date(eightDaysAgo).toISOString() })
+
+      const all = store.listSafe()
+      expect(all).toHaveLength(1)
+      expect(all[0].origin).toBe('https://fresh.com')
+    })
+
+    it('updateBalance() is a no-op for expired credentials', () => {
+      const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000)
+      store.set('https://stale.com', { ...cred, storedAt: new Date(eightDaysAgo).toISOString() })
+      store.updateBalance('https://stale.com', 999)
+
+      // Should have been purged, not updated
+      expect(store.get('https://stale.com')).toBeUndefined()
+    })
+
+    it('updateLastUsed() is a no-op for expired credentials', () => {
+      const eightDaysAgo = Date.now() - (8 * 24 * 60 * 60 * 1000)
+      store.set('https://stale.com', { ...cred, storedAt: new Date(eightDaysAgo).toISOString() })
+      store.updateLastUsed('https://stale.com')
+
+      expect(store.get('https://stale.com')).toBeUndefined()
+    })
   })
 })
