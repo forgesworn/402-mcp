@@ -19,18 +19,19 @@ export function createNwcWallet(nwcUri: string): WalletProvider {
       try {
         const { getPublicKey, finalizeEvent } = await import('nostr-tools/pure')
         const { Relay } = await import('nostr-tools/relay')
-        const { encrypt, decrypt } = await import('nostr-tools/nip04')
+        const { encrypt, decrypt, getConversationKey } = await import('nostr-tools/nip44')
 
         const secretBytes = hexToBytes(secret)
-        // clientPubkey needed if we later support NIP-44; getPublicKey validates the secret
         getPublicKey(secretBytes)
+
+        const conversationKey = getConversationKey(secretBytes, walletPubkey)
 
         const content = JSON.stringify({
           method: 'pay_invoice',
           params: { invoice },
         })
 
-        const encrypted = await encrypt(secretBytes, walletPubkey, content)
+        const encrypted = encrypt(content, conversationKey)
 
         const event = finalizeEvent({
           kind: 23194,
@@ -52,10 +53,10 @@ export function createNwcWallet(nwcUri: string): WalletProvider {
             '#e': [event.id],
             authors: [walletPubkey],
           }], {
-            onevent: async (responseEvent) => {
+            onevent: (responseEvent) => {
               clearTimeout(timeout)
               try {
-                const decrypted = await decrypt(secretBytes, walletPubkey, responseEvent.content)
+                const decrypted = decrypt(responseEvent.content, conversationKey)
                 const response = JSON.parse(decrypted)
                 if (response.result?.preimage) {
                   r.close()
