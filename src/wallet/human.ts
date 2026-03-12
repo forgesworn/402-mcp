@@ -1,38 +1,11 @@
 import type { WalletProvider, PaymentResult } from './types.js'
-
-export interface HumanWalletOptions {
-  pollIntervalS: number
-  timeoutS: number
-  generateQr: (invoice: string) => Promise<string>
-}
-
-export function createHumanWallet(options: HumanWalletOptions): WalletProvider {
-  return {
-    method: 'human',
-    available: true,
-
-    async payInvoice(invoice: string): Promise<PaymentResult> {
-      const qrDataUri = await options.generateQr(invoice)
-
-      return {
-        paid: false,
-        method: 'human',
-        reason: JSON.stringify({
-          awaitingHuman: true,
-          invoice,
-          qrDataUri,
-          expiresIn: options.timeoutS,
-          message: 'Pay this invoice from your wallet. Polling for settlement...',
-        }),
-      }
-    },
-  }
-}
+import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 
 export interface PollOptions {
-  pollIntervalS: number
+  initialIntervalS: number
+  maxIntervalS: number
   timeoutS: number
-  checkSettlement: (paymentHash: string) => Promise<{ paid: boolean; preimage?: string }>
+  checkSettlement: (paymentHash: string) => Promise<{ settled: boolean; preimage?: string }>
 }
 
 export async function pollForSettlement(
@@ -40,14 +13,70 @@ export async function pollForSettlement(
   options: PollOptions,
 ): Promise<PaymentResult> {
   const deadline = Date.now() + options.timeoutS * 1000
+  let intervalMs = options.initialIntervalS * 1000
 
   while (Date.now() < deadline) {
     const result = await options.checkSettlement(paymentHash)
-    if (result.paid) {
+    if (result.settled) {
       return { paid: true, preimage: result.preimage, method: 'human' }
     }
-    await new Promise(resolve => setTimeout(resolve, options.pollIntervalS * 1000))
+    const remaining = deadline - Date.now()
+    if (remaining <= 0) break
+    await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, remaining)))
+    intervalMs = Math.min(intervalMs * 2, options.maxIntervalS * 1000)
   }
 
-  return { paid: false, method: 'human', reason: 'timeout' }
+  return { paid: false, method: 'human', reason: `Payment timed out after ${options.timeoutS}s` }
+}
+
+export interface HumanWalletOptions {
+  initialIntervalS: number
+  maxIntervalS: number
+  timeoutS: number
+  generateQr: (data: string) => Promise<string>
+  fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
+}
+
+export function createHumanWallet(options: HumanWalletOptions): WalletProvider & { setServerOrigin(origin: string): void } {
+  let serverOrigin = ''
+
+  return {
+    method: 'human',
+    available: true,
+
+    setServerOrigin(origin: string) {
+      serverOrigin = origin
+    },
+
+    async payInvoice(invoice: string): Promise<PaymentResult> {
+      const qrDataUri = await options.generateQr(invoice)
+      console.error(`\nScan to pay: ${qrDataUri}\n`)
+
+      const { decodeBolt11 } = await import('../l402/bolt11.js')
+      const decoded = decodeBolt11(invoice)
+      if (!decoded?.paymentHash) {
+        return { paid: false, method: 'human', reason: 'Could not decode invoice payment hash' }
+      }
+
+      if (!serverOrigin) {
+        return { paid: false, method: 'human', reason: 'No server origin set for settlement polling' }
+      }
+
+      return pollForSettlement(decoded.paymentHash, {
+        initialIntervalS: options.initialIntervalS,
+        maxIntervalS: options.maxIntervalS,
+        timeoutS: options.timeoutS,
+        checkSettlement: async (hash: string) => {
+          try {
+            const res = await options.fetchFn(`${serverOrigin}/invoice-status/${hash}`, undefined, { retries: 0 })
+            if (!res.ok) return { settled: false }
+            const data = await res.json() as Record<string, unknown>
+            return { settled: data.settled === true, preimage: data.preimage as string | undefined }
+          } catch {
+            return { settled: false }
+          }
+        },
+      })
+    },
+  }
 }

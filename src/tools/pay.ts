@@ -2,7 +2,6 @@ import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ChallengeCache } from '../l402/challenge-cache.js'
 import type { WalletMethod, WalletProvider } from '../wallet/types.js'
-import { pollForSettlement } from '../wallet/human.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 
 export interface PayDeps {
@@ -11,8 +10,6 @@ export interface PayDeps {
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string, server: 'toll-booth' | null) => void
   maxAutoPaySats: number
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
-  humanPayPollS: number
-  humanPayTimeoutS: number
 }
 
 export async function handlePay(
@@ -70,53 +67,12 @@ export async function handlePay(
     }
   }
 
-  let result = await wallet.payInvoice(invoice)
-
-  // If human wallet returned awaitingHuman, poll for settlement
-  if (!result.paid && result.method === 'human' && result.reason) {
-    try {
-      const humanData = JSON.parse(result.reason)
-      if (humanData.awaitingHuman && paymentHash && cachedUrl) {
-        const origin = new URL(cachedUrl).origin
-        const pollResult = await pollForSettlement(paymentHash, {
-          pollIntervalS: deps.humanPayPollS,
-          timeoutS: deps.humanPayTimeoutS,
-          checkSettlement: async (hash: string) => {
-            try {
-              const res = await deps.fetchFn(`${origin}/invoice-status/${hash}`, undefined, { retries: 0 })
-              if (!res.ok) return { paid: false }
-              const data = await res.json() as Record<string, unknown>
-              return {
-                paid: data.settled === true,
-                preimage: data.preimage as string | undefined,
-              }
-            } catch {
-              return { paid: false }
-            }
-          },
-        })
-
-        if (pollResult.paid) {
-          result = pollResult
-        } else {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                paid: false,
-                method: 'human',
-                reason: 'Payment not received within timeout',
-                qrDataUri: humanData.qrDataUri,
-                invoice: humanData.invoice,
-              }, null, 2),
-            }],
-          }
-        }
-      }
-    } catch {
-      // reason wasn't JSON; fall through to normal response
-    }
+  // Set server origin for human wallet polling
+  if (wallet.method === 'human' && cachedUrl && 'setServerOrigin' in wallet) {
+    (wallet as any).setServerOrigin(new URL(cachedUrl).origin)
   }
+
+  const result = await wallet.payInvoice(invoice)
 
   if (result.paid && result.preimage) {
     const origin = cachedUrl ? new URL(cachedUrl).origin : ''

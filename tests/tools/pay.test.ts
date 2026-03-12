@@ -4,8 +4,6 @@ import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
 const baseDeps = {
   fetchFn: vi.fn() as unknown as typeof fetch,
-  humanPayPollS: 1,
-  humanPayTimeoutS: 5,
 }
 
 describe('handlePay', () => {
@@ -81,7 +79,7 @@ describe('handlePay', () => {
     expect(parsed.reason).toContain('No wallet')
   })
 
-  it('polls for settlement when human wallet returns awaitingHuman', async () => {
+  it('sets server origin on human wallet before paying', async () => {
     const cache = new ChallengeCache()
     cache.set({
       invoice: 'lnbc100n1test',
@@ -92,20 +90,17 @@ describe('handlePay', () => {
       url: 'https://api.example.com/data',
     })
 
+    const setServerOrigin = vi.fn()
     const humanWallet = {
       method: 'human' as const,
       available: true,
+      setServerOrigin,
       payInvoice: vi.fn().mockResolvedValue({
-        paid: false,
+        paid: true,
         method: 'human',
-        reason: JSON.stringify({ awaitingHuman: true, invoice: 'lnbc100n1test', qrDataUri: 'data:test', expiresIn: 5 }),
+        preimage: 'human-preimage',
       }),
     }
-
-    const mockFetchFn = vi.fn().mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ settled: true, preimage: 'human-preimage' }),
-    })
 
     const storeCredential = vi.fn()
 
@@ -116,12 +111,11 @@ describe('handlePay', () => {
         resolveWallet: () => humanWallet,
         storeCredential,
         maxAutoPaySats: 1000,
-        fetchFn: mockFetchFn as unknown as typeof fetch,
-        humanPayPollS: 0.01,
-        humanPayTimeoutS: 5,
+        fetchFn: vi.fn() as unknown as typeof fetch,
       },
     )
 
+    expect(setServerOrigin).toHaveBeenCalledWith('https://api.example.com')
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.paid).toBe(true)
     expect(parsed.preimage).toBe('human-preimage')

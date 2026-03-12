@@ -60,9 +60,11 @@ async function generateQr(invoice: string): Promise<string> {
 }
 
 walletProviders.push(createHumanWallet({
-  pollIntervalS: config.humanPayPollS,
+  initialIntervalS: config.humanPayPollS,
+  maxIntervalS: 30,
   timeoutS: config.humanPayTimeoutS,
   generateQr,
+  fetchFn: resilientFetch,
 }))
 
 // Helper: resolve wallet with optional method override
@@ -128,8 +130,6 @@ registerPayTool(server, {
   storeCredential,
   maxAutoPaySats: config.maxAutoPaySats,
   fetchFn: resilientFetch,
-  humanPayPollS: config.humanPayPollS,
-  humanPayTimeoutS: config.humanPayTimeoutS,
 })
 
 registerCredentialsTool(server, credentialStore)
