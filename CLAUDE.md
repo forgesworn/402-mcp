@@ -10,6 +10,27 @@ npm test            # vitest run
 npm run typecheck   # tsc --noEmit
 ```
 
+## Running
+
+```bash
+# Stdio transport (default — used by MCP clients like Claude Desktop)
+node build/index.js
+
+# HTTP transport (for network access, e.g. behind a reverse proxy)
+TRANSPORT=http PORT=3402 node build/index.js
+```
+
+Key environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `NWC_URI` | — | Nostr Wallet Connect URI for autonomous Lightning payments |
+| `CASHU_TOKENS` | — | Path to Cashu token store file |
+| `MAX_AUTO_PAY_SATS` | `1000` | Auto-pay threshold per request |
+| `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap |
+| `TRANSPORT` | `stdio` | `stdio` or `http` |
+| `SSRF_ALLOW_PRIVATE` | `false` | Allow requests to private IPs (local dev only) |
+
 ## Structure
 
 ```
@@ -43,6 +64,12 @@ Tests live in `tests/` (NOT co-located with source). Each handler's `handle*` fu
 - **Git:** Do NOT include `Co-Authored-By` lines in commits
 - **Tool pattern:** Each tool file exports a `handle*` function (testable) and a `register*Tool` function (MCP wiring)
 - **Zero toll-booth dependency** - works with any L402 server (toll-booth is devDependency only, for integration tests)
+
+## Security patterns
+
+- **Atomic spend tracking:** Always use `spendTracker.tryRecord(sats, limit)` — never split `wouldExceed()` + `record()`. The split pattern has a TOCTOU race where concurrent callers both pass the check before either records.
+- **Preimage validation:** `storeCredential()` in `index.ts` validates preimage is hex before storing. Preimages are sent raw in `Authorization: L402 {macaroon}:{preimage}` headers.
+- **HTTP security headers:** HTTP transport sets `X-Content-Type-Options`, `X-Frame-Options`, `Cache-Control`, `CSP`.
 
 ## Fetch Resilience
 
