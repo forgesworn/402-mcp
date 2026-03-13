@@ -130,4 +130,40 @@ describe('handleRedeemCashu', () => {
     expect(storeCredential).not.toHaveBeenCalled()
     expect(removeToken).not.toHaveBeenCalled()
   })
+
+  it('rejects empty token_suffix from server', async () => {
+    const mockFetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          payment_hash: 'hash789',
+          macaroon: 'mac789',
+          payment_url: '/invoice-status/hash789?token=status123',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          token_suffix: '',
+          credited: 1000,
+        }),
+      })
+
+    const storeCredential = vi.fn()
+
+    const result = await handleRedeemCashu(
+      { url: 'https://api.example.com/data', token: 'cashuAeyJ...' },
+      {
+        fetchFn: mockFetch as unknown as typeof fetch,
+        storeCredential,
+        removeToken: vi.fn(),
+      },
+    )
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.error).toBeDefined()
+    expect(result.isError).toBe(true)
+    // Must NOT store credential with empty preimage
+    expect(storeCredential).not.toHaveBeenCalled()
+  })
 })

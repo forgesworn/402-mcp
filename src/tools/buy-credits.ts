@@ -7,8 +7,8 @@ import type { SpendTracker } from '../spend-tracker.js'
 import { safeErrorMessage } from './safe-error.js'
 
 const CreateInvoiceResponse = z.object({
-  bolt11: z.string(),
-  macaroon: z.string(),
+  bolt11: z.string().min(1).max(20_000),
+  macaroon: z.string().min(1).max(10_000),
   credit_sats: z.number().optional(),
 })
 

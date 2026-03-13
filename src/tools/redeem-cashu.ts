@@ -4,13 +4,13 @@ import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import { safeErrorMessage } from './safe-error.js'
 
 const InvoiceResponse = z.object({
-  payment_hash: z.string(),
-  macaroon: z.string(),
-  payment_url: z.string(),
+  payment_hash: z.string().min(1).max(128),
+  macaroon: z.string().min(1).max(10_000),
+  payment_url: z.string().max(2048),
 })
 
 const RedeemResponseSchema = z.object({
-  token_suffix: z.string(),
+  token_suffix: z.string().min(1).max(256),
   credited: z.number().optional(),
 })
 

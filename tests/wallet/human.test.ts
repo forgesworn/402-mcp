@@ -19,6 +19,17 @@ describe('pollForSettlement with exponential backoff', () => {
     expect(callCount).toBe(3)
   })
 
+  it('returns paid true but undefined preimage when server omits it', async () => {
+    const result = await pollForSettlement('abc123', {
+      initialIntervalS: 0.01,
+      maxIntervalS: 0.1,
+      timeoutS: 5,
+      checkSettlement: async () => ({ settled: true, preimage: undefined }),
+    })
+    expect(result.paid).toBe(true)
+    expect(result.preimage).toBeUndefined()
+  })
+
   it('times out and returns paid false', async () => {
     const result = await pollForSettlement('abc123', {
       initialIntervalS: 0.05,

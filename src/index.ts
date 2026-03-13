@@ -86,8 +86,12 @@ async function payInvoice(invoice: string, method?: WalletMethod): Promise<{ pai
   return { paid: result.paid, preimage: result.preimage, method: result.method }
 }
 
-// Helper: store credential
+// Helper: store credential — validates preimage to prevent credential poisoning
 function storeCredential(origin: string, macaroon: string, preimage: string, paymentHash: string, server: 'toll-booth' | null = null): void {
+  if (!preimage || typeof preimage !== 'string' || preimage.length === 0) {
+    console.error(`[l402-mcp] Refusing to store credential for ${origin}: missing or empty preimage`)
+    return
+  }
   credentialStore.set(origin, {
     macaroon,
     preimage,

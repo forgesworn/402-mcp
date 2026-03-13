@@ -71,7 +71,10 @@ export function createHumanWallet(options: HumanWalletOptions): WalletProvider &
             const res = await options.fetchFn(`${serverOrigin}/invoice-status/${hash}`, undefined, { retries: 0 })
             if (!res.ok) return { settled: false }
             const data = await res.json() as Record<string, unknown>
-            return { settled: data.settled === true, preimage: data.preimage as string | undefined }
+            const preimage = typeof data.preimage === 'string' && data.preimage.length > 0
+              ? data.preimage
+              : undefined
+            return { settled: data.settled === true, preimage }
           } catch {
             return { settled: false }
           }
