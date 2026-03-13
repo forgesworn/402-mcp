@@ -5,13 +5,20 @@ import type { CredentialStore } from '../store/credentials.js'
 const STALE_THRESHOLD_MS = 5 * 60 * 1000
 
 export function handleBalance(args: { origin: string }, store: CredentialStore) {
-  const cred = store.get(args.origin)
+  // Normalise to origin (strips path, trailing slash) to match credential store keys
+  let origin: string
+  try {
+    origin = new URL(args.origin).origin
+  } catch {
+    origin = args.origin
+  }
+  const cred = store.get(origin)
 
   if (!cred) {
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ error: `No stored credentials for ${args.origin}` }),
+        text: JSON.stringify({ error: `No stored credentials for ${origin}` }),
       }],
       isError: true as const,
     }
@@ -24,7 +31,7 @@ export function handleBalance(args: { origin: string }, store: CredentialStore) 
     content: [{
       type: 'text' as const,
       text: JSON.stringify({
-        origin: args.origin,
+        origin,
         creditsRemaining: cred.creditBalance,
         lastUpdated,
         stale,

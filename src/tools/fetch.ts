@@ -95,8 +95,8 @@ export async function handleFetch(
       const payResult = await deps.payInvoice(challenge.invoice)
 
       if (payResult.paid && payResult.preimage) {
-        // Record spend for rate limiting
-        deps.spendTracker.record(decoded.costSats!)
+        // Record spend atomically for rate limiting
+        deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
 
         // Store credential and retry
         deps.credentialStore.set(origin, {

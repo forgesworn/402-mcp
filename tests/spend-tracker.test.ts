@@ -97,6 +97,42 @@ describe('SpendTracker', () => {
     expect(tracker.recentSpend()).toBe(50)
   })
 
+  it('record ignores negative values', () => {
+    const tracker = new SpendTracker()
+    tracker.record(100)
+    tracker.record(-50)
+    expect(tracker.recentSpend()).toBe(100)
+  })
+
+  it('record ignores zero values', () => {
+    const tracker = new SpendTracker()
+    tracker.record(100)
+    tracker.record(0)
+    expect(tracker.recentSpend()).toBe(100)
+  })
+
+  describe('tryRecord', () => {
+    it('records and returns true when within limit', () => {
+      const tracker = new SpendTracker()
+      expect(tracker.tryRecord(500, 1000)).toBe(true)
+      expect(tracker.recentSpend()).toBe(500)
+    })
+
+    it('rejects and returns false when would exceed limit', () => {
+      const tracker = new SpendTracker()
+      tracker.record(8000)
+      expect(tracker.tryRecord(3000, 10000)).toBe(false)
+      // Spend should not have increased
+      expect(tracker.recentSpend()).toBe(8000)
+    })
+
+    it('returns true for non-positive sats', () => {
+      const tracker = new SpendTracker()
+      expect(tracker.tryRecord(0, 1000)).toBe(true)
+      expect(tracker.tryRecord(-5, 1000)).toBe(true)
+    })
+  })
+
   it('wouldExceed returns true at exactly the limit boundary', () => {
     const tracker = new SpendTracker()
     tracker.record(5000)

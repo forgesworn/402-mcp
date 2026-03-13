@@ -9,6 +9,7 @@ export class SpendTracker {
   private static readonly MAX_ENTRIES = 10_000
 
   record(sats: number): void {
+    if (sats <= 0) return // reject negative or zero values
     // Evict stale entries before adding to prevent unbounded growth
     if (this.entries.length >= SpendTracker.MAX_ENTRIES) {
       const cutoff = Date.now() - this.windowMs
@@ -26,5 +27,17 @@ export class SpendTracker {
   wouldExceed(sats: number, limit: number): boolean {
     if (limit <= 0) return false // 0 = unlimited
     return this.recentSpend() + sats > limit
+  }
+
+  /**
+   * Atomic check-and-record: returns true and records the spend if it
+   * would NOT exceed the limit, false otherwise. Closes the TOCTOU gap
+   * between wouldExceed() and record() for concurrent callers.
+   */
+  tryRecord(sats: number, limit: number): boolean {
+    if (sats <= 0) return true
+    if (limit > 0 && this.recentSpend() + sats > limit) return false
+    this.record(sats)
+    return true
   }
 }

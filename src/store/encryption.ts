@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, openSync, closeSync, mkdirSync, chmodSync, constants as fsConstants } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -54,14 +54,29 @@ export function isEncrypted(data: unknown): data is EncryptedPayload {
 }
 
 function loadOrCreateFallbackKey(): Buffer {
-  if (existsSync(FALLBACK_KEY_PATH)) {
-    return Buffer.from(readFileSync(FALLBACK_KEY_PATH, 'utf8').trim(), 'hex')
-  }
-  const newKey = randomBytes(32)
+  // Try to create atomically first (O_CREAT | O_EXCL fails if file exists)
   mkdirSync(dirname(FALLBACK_KEY_PATH), { recursive: true })
-  writeFileSync(FALLBACK_KEY_PATH, newKey.toString('hex'), { mode: 0o600 })
-  try { chmodSync(FALLBACK_KEY_PATH, 0o600) } catch { /* Windows safety net */ }
-  return newKey
+  try {
+    const newKey = randomBytes(32)
+    const fd = openSync(FALLBACK_KEY_PATH, fsConstants.O_WRONLY | fsConstants.O_CREAT | fsConstants.O_EXCL, 0o600)
+    try {
+      writeFileSync(fd, newKey.toString('hex'))
+    } finally {
+      closeSync(fd)
+    }
+    try { chmodSync(FALLBACK_KEY_PATH, 0o600) } catch { /* Windows safety net */ }
+    return newKey
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
+  }
+
+  // File already exists — read and validate
+  const hex = readFileSync(FALLBACK_KEY_PATH, 'utf8').trim()
+  const key = Buffer.from(hex, 'hex')
+  if (key.length !== 32) {
+    throw new Error(`Encryption key file is corrupted (expected 32 bytes, got ${key.length}). Remove ${FALLBACK_KEY_PATH} to regenerate (existing credentials will be lost).`)
+  }
+  return key
 }
 
 export async function getOrCreateKey(): Promise<KeyResult> {

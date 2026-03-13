@@ -118,8 +118,9 @@ export function createResilientFetch(
           fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr, resolved,
         )
 
-        // If retryable status and we have retries left, continue
+        // If retryable status and we have retries left, drain body and continue
         if (retryOn(response.status) && attempt < totalAttempts - 1) {
+          try { await response.body?.cancel() } catch { /* free the connection */ }
           lastError = new Error(`HTTP ${response.status}`)
           continue
         }
@@ -140,7 +141,7 @@ export function createResilientFetch(
               if (done) break
               totalBytes += value.byteLength
               if (totalBytes > globalMaxResponseBytes) {
-                reader.cancel()
+                try { await reader.cancel() } catch { /* ignore cancel errors */ }
                 throw new ResponseTooLargeError(globalMaxResponseBytes)
               }
               chunks.push(value)

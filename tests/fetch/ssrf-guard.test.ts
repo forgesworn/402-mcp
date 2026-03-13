@@ -114,6 +114,107 @@ describe('validateUrl', () => {
     })
   })
 
+  describe('IPv4-mapped IPv6 addresses', () => {
+    it('blocks dotted-quad form (::ffff:127.0.0.1)', async () => {
+      mockLookup.mockResolvedValue({ address: '::ffff:127.0.0.1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('loopback')
+    })
+
+    it('blocks hex form (::ffff:7f00:1)', async () => {
+      mockLookup.mockResolvedValue({ address: '::ffff:7f00:1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('loopback')
+    })
+
+    it('blocks hex form for 10.x (::ffff:a00:1)', async () => {
+      mockLookup.mockResolvedValue({ address: '::ffff:a00:1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('private IP')
+    })
+
+    it('blocks hex form for 192.168.x (::ffff:c0a8:1)', async () => {
+      mockLookup.mockResolvedValue({ address: '::ffff:c0a8:1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('private IP')
+    })
+  })
+
+  describe('NAT64 prefix (64:ff9b::/96)', () => {
+    it('blocks NAT64-encoded loopback (64:ff9b::7f00:1)', async () => {
+      mockLookup.mockResolvedValue({ address: '64:ff9b::7f00:1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('loopback')
+    })
+
+    it('blocks NAT64 dotted-quad form (64:ff9b::10.0.0.1)', async () => {
+      mockLookup.mockResolvedValue({ address: '64:ff9b::10.0.0.1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('private IP')
+    })
+
+    it('blocks NAT64-encoded 192.168.x (64:ff9b::c0a8:1)', async () => {
+      mockLookup.mockResolvedValue({ address: '64:ff9b::c0a8:1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('private IP')
+    })
+  })
+
+  describe('additional reserved ranges', () => {
+    it('blocks 240.0.0.0/4 (Class E reserved)', async () => {
+      mockLookup.mockResolvedValue({ address: '240.0.0.1', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('reserved')
+    })
+
+    it('blocks 255.255.255.255 (broadcast)', async () => {
+      mockLookup.mockResolvedValue({ address: '255.255.255.255', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      // Class E check fires first since 255 >= 240
+      await expect(validateUrl('http://example.com')).rejects.toThrow('reserved')
+    })
+
+    it('blocks 192.0.2.0/24 (TEST-NET-1)', async () => {
+      mockLookup.mockResolvedValue({ address: '192.0.2.1', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+    })
+
+    it('blocks 198.51.100.0/24 (TEST-NET-2)', async () => {
+      mockLookup.mockResolvedValue({ address: '198.51.100.1', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+    })
+
+    it('blocks 203.0.113.0/24 (TEST-NET-3)', async () => {
+      mockLookup.mockResolvedValue({ address: '203.0.113.1', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+    })
+
+    it('blocks 198.18.0.0/15 (benchmarking)', async () => {
+      mockLookup.mockResolvedValue({ address: '198.18.0.1', family: 4 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('benchmarking')
+    })
+
+    it('blocks fe90:: (link-local within fe80::/10 range)', async () => {
+      mockLookup.mockResolvedValue({ address: 'fe90::1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('link-local')
+    })
+
+    it('blocks febf:: (link-local within fe80::/10 range)', async () => {
+      mockLookup.mockResolvedValue({ address: 'febf::1', family: 6 })
+      await expect(validateUrl('http://example.com')).rejects.toThrow(SsrfError)
+      await expect(validateUrl('http://example.com')).rejects.toThrow('link-local')
+    })
+
+    it('allows fec0:: (outside fe80::/10 range)', async () => {
+      mockLookup.mockResolvedValue({ address: 'fec0::1', family: 6 })
+      // fec0::/10 is deprecated site-local but not in our block list
+      const result = await validateUrl('http://example.com')
+      expect(result).toBeDefined()
+    })
+  })
+
   describe('bypass', () => {
     it('returns undefined when allowPrivate is true (no DNS resolution)', async () => {
       const result = await validateUrl('http://localhost', true)

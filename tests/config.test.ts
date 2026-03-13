@@ -141,4 +141,34 @@ describe('config validation', () => {
     const { loadConfig } = await import('../src/config.js')
     expect(loadConfig().fetchMaxRetries).toBe(0)
   })
+
+  it('throws when CASHU_TOKENS is outside home directory', async () => {
+    vi.stubEnv('CASHU_TOKENS', '/etc/shadow')
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow('CASHU_TOKENS')
+    expect(() => loadConfig()).toThrow('home directory')
+  })
+
+  it('warns on non-loopback BIND_ADDRESS with HTTP transport', async () => {
+    vi.stubEnv('TRANSPORT', 'http')
+    vi.stubEnv('BIND_ADDRESS', '0.0.0.0')
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { loadConfig } = await import('../src/config.js')
+    loadConfig()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('network-accessible without authentication'),
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('warns when NODE_TLS_REJECT_UNAUTHORIZED is 0', async () => {
+    vi.stubEnv('NODE_TLS_REJECT_UNAUTHORIZED', '0')
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { loadConfig } = await import('../src/config.js')
+    loadConfig()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('TLS certificate validation is disabled'),
+    )
+    warnSpy.mockRestore()
+  })
 })

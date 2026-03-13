@@ -24,6 +24,14 @@ describe('createNwcWallet', () => {
     expect(result.paid).toBe(false)
     expect(result.reason).toContain('missing relay or secret')
   })
+
+  it('rejects non-WebSocket relay URL', async () => {
+    const { createNwcWallet } = await import('../../src/wallet/nwc.js')
+    const wallet = createNwcWallet('nostr+walletconnect://abc123?relay=http://evil.example.com&secret=abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234')
+    const result = await wallet.payInvoice('lnbc100n1test')
+    expect(result.paid).toBe(false)
+    expect(result.reason).toContain('ws:// or wss://')
+  })
 })
 
 describe('hexToBytes', () => {

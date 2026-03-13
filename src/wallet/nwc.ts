@@ -16,11 +16,16 @@ export function createNwcWallet(nwcUri: string): WalletProvider {
         return { paid: false, method: 'nwc', reason: 'Invalid NWC URI: missing relay or secret' }
       }
 
+      // Validate relay URL scheme (defence in depth — only WebSocket allowed)
+      if (!relay.startsWith('wss://') && !relay.startsWith('ws://')) {
+        return { paid: false, method: 'nwc', reason: 'Invalid NWC URI: relay must use ws:// or wss://' }
+      }
+
       let secretBytes: Uint8Array | undefined
       let conversationKey: Uint8Array | undefined
 
       try {
-        const { getPublicKey, finalizeEvent } = await import('nostr-tools/pure')
+        const { getPublicKey, finalizeEvent, verifyEvent } = await import('nostr-tools/pure')
         const { Relay } = await import('nostr-tools/relay')
         const { encrypt, decrypt, getConversationKey } = await import('nostr-tools/nip44')
 
@@ -69,6 +74,14 @@ export function createNwcWallet(nwcUri: string): WalletProvider {
             onevent: (responseEvent) => {
               clearTimeout(timeout)
               try {
+                // Verify event signature — relay-side filtering is advisory;
+                // a compromised relay could forge responses with fake preimages.
+                if (!verifyEvent(responseEvent)) {
+                  ck.fill(0)
+                  r.close()
+                  resolve({ paid: false, method: 'nwc', reason: 'NWC response signature verification failed' })
+                  return
+                }
                 const decrypted = decrypt(responseEvent.content, ck)
                 const response = JSON.parse(decrypted)
                 if (response.result?.preimage) {

@@ -218,7 +218,7 @@ describe('createCashuWallet', () => {
     )
   })
 
-  it('re-adds token to store when melt fails', async () => {
+  it('re-adds swapped proofs (not dead original) when melt fails after send', async () => {
     const store = mockTokenStore([
       { token: 'cashuAfail', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
     ])
@@ -241,9 +241,69 @@ describe('createCashuWallet', () => {
 
     expect(result.paid).toBe(false)
     expect(result.reason).toContain('melt failed')
-    // Original token re-added
+    // After send() the original token is dead on the mint. The swapped
+    // send proofs (128 sats) should be re-added, NOT the original token.
+    expect(store.add).toHaveBeenCalledTimes(1)
     expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({ token: 'cashuAfail' }),
+      expect.objectContaining({
+        mint: 'https://mint.example.com',
+        amountSats: 128,
+      }),
     )
+  })
+
+  it('re-adds original token when error occurs before send', async () => {
+    const store = mockTokenStore([
+      { token: 'cashuApre', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
+    ])
+
+    // Error during createMeltQuote (before send)
+    mockWalletInstance.createMeltQuote.mockRejectedValue(new Error('mint unreachable'))
+
+    const wallet = createCashuWallet(store)
+    const result = await wallet.payInvoice('lnbc100n1test')
+
+    expect(result.paid).toBe(false)
+    expect(result.reason).toBe('Cashu payment failed')
+    // Original token should be re-added since send() never ran
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({ token: 'cashuApre' }),
+    )
+  })
+
+  it('restores swapped proofs when error occurs after send', async () => {
+    const store = mockTokenStore([
+      { token: 'cashuApost', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
+    ])
+
+    mockWalletInstance.createMeltQuote.mockResolvedValue({
+      amount: 100,
+      fee_reserve: 10,
+    })
+    mockWalletInstance.send.mockResolvedValue({
+      send: [{ amount: 128, id: 'abc', secret: 's2', C: 'c2' }],
+      keep: [{ amount: 256, id: 'abc', secret: 's3', C: 'c3' }],
+    })
+    // meltProofs throws after send() has already swapped the original proofs
+    mockWalletInstance.meltProofs.mockRejectedValue(new Error('network timeout'))
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wallet = createCashuWallet(store)
+    const result = await wallet.payInvoice('lnbc100n1test')
+
+    expect(result.paid).toBe(false)
+    expect(result.reason).toBe('Cashu payment failed')
+    // Should restore swapped proofs (keep 256 + send 128 = 384), NOT original
+    expect(store.add).toHaveBeenCalledTimes(1)
+    expect(store.add).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mint: 'https://mint.example.com',
+        amountSats: 384,
+      }),
+    )
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('send() succeeded'),
+    )
+    warnSpy.mockRestore()
   })
 })

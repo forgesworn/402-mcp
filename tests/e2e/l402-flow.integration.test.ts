@@ -86,9 +86,11 @@ describe('L402 integration flow', () => {
     expect(res.status).toBe(402)
 
     const body = await res.json() as Record<string, unknown>
-    expect(body.payment_hash).toBeDefined()
-    expect(body.macaroon).toBeDefined()
-    expect(body.payment_url).toBeDefined()
+    // toll-booth wraps 402 fields under body.l402
+    const l402 = (body.l402 ?? body) as Record<string, unknown>
+    expect(l402.payment_hash).toBeDefined()
+    expect(l402.macaroon).toBeDefined()
+    expect(l402.payment_url).toBeDefined()
 
     const wwwAuth = res.headers.get('www-authenticate')
     expect(wwwAuth).toMatch(/^L402\s+/)

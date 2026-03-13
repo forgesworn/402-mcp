@@ -78,10 +78,28 @@ export function loadConfig(): L402Config {
   assertPositiveInt('HUMAN_PAY_POLL_S', config.humanPayPollS)
 
   // Validate credential store path stays within home directory
-  const resolvedStorePath = resolve(config.credentialStorePath)
   const home = homedir()
+  const resolvedStorePath = resolve(config.credentialStorePath)
   if (!resolvedStorePath.startsWith(home)) {
     throw new Error(`CREDENTIAL_STORE must be within the home directory (got: ${config.credentialStorePath})`)
+  }
+
+  // Validate Cashu tokens path too — same constraint
+  if (config.cashuTokensPath) {
+    const resolvedCashuPath = resolve(config.cashuTokensPath)
+    if (!resolvedCashuPath.startsWith(home)) {
+      throw new Error(`CASHU_TOKENS must be within the home directory (got: ${config.cashuTokensPath})`)
+    }
+  }
+
+  // Warn if BIND_ADDRESS is non-loopback (server will be network-accessible without auth)
+  if (config.transport === 'http' && config.bindAddress !== '127.0.0.1' && config.bindAddress !== '::1') {
+    console.error(`Warning: BIND_ADDRESS is ${config.bindAddress} — server will be network-accessible without authentication. Use a reverse proxy with TLS and auth for production.`)
+  }
+
+  // Refuse to operate if TLS verification is disabled (DNS rebinding risk)
+  if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
+    console.error('Warning: NODE_TLS_REJECT_UNAUTHORIZED=0 — TLS certificate validation is disabled. HTTPS DNS rebinding attacks become possible. Do not use in production.')
   }
 
   return config
