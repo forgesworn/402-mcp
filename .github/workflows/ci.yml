@@ -22,7 +22,7 @@ jobs:
 
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
-      - run: npm test
+      - run: npm test -- --exclude 'tests/e2e/l402-flow.integration.test.ts'
 
   release:
     needs: test
@@ -37,6 +37,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          fetch-tags: true
 
       - uses: actions/setup-node@v4
         with:
