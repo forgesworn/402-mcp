@@ -1,3 +1,16 @@
+# [2.1.0](https://github.com/TheCryptoDonkey/l402-mcp/compare/v2.0.1...v2.1.0) (2026-03-14)
+
+
+### Bug Fixes
+
+* security hardening — event verification, accumulation cap, relay validation ([926667e](https://github.com/TheCryptoDonkey/l402-mcp/commit/926667e07ba9094b1fee355b44ba878f2483461f))
+
+
+### Features
+
+* add l402_search tool for kind 31402 service discovery ([76f4e9d](https://github.com/TheCryptoDonkey/l402-mcp/commit/76f4e9defc4ef76a2074341f9b4315a709391dab))
+* register l402_search tool with Nostr relay subscriber ([26e9494](https://github.com/TheCryptoDonkey/l402-mcp/commit/26e9494065ccac1a3a2ad64262e89b10389ba2fe))
+
 ## [2.0.1](https://github.com/TheCryptoDonkey/l402-mcp/compare/v2.0.0...v2.0.1) (2026-03-14)
 
 
