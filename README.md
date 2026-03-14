@@ -104,6 +104,21 @@ Agent: "I need routing data from routing.trotters.cc"
 
 l402-mcp stores credentials locally on your machine only (`~/.l402-mcp/credentials.json`, encrypted at rest). No data is sent to any third party. No accounts, no tracking, no analytics. Payments use Lightning or Cashu — pseudonymous by design.
 
+## Why l402-mcp?
+
+The L402 ecosystem is growing fast — Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools), Coinbase's x402, and others. l402-mcp is the **payment-rail agnostic** alternative:
+
+| | l402-mcp | Lightning Labs agent tools |
+|---|---|---|
+| **Payment rails** | NWC + Cashu + human fallback | Lightning only |
+| **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
+| **Server compatibility** | Any L402 server | Aperture-focused |
+| **Spend safety** | Per-payment cap + rolling 60s window | Per-call max-cost |
+| **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
+| **Privacy** | No PII, SSRF protection, error sanitisation | Standard |
+
+Use Lightning Labs' tools if you want agents that **run their own Lightning node**. Use l402-mcp if you want agents that **pay from any wallet without infrastructure**.
+
 ## Ecosystem
 
 | Project | Role |
