@@ -10,6 +10,8 @@ function isBlockedIp(address: string, family: number): string | null {
     // fe80::/10 covers fe80:: through febf:: (check first 10 bits)
     const firstGroup = parseInt(lower.split(':')[0] || '0', 16)
     if ((firstGroup & 0xffc0) === 0xfe80) return 'link-local'
+    // fec0::/10 — deprecated site-local (RFC 3879), may still be in use on internal networks
+    if ((firstGroup & 0xffc0) === 0xfec0) return 'deprecated site-local'
 
     if (lower.startsWith('fc') || lower.startsWith('fd')) return 'private IP (ULA)'
 
@@ -99,11 +101,19 @@ export async function validateUrl(url: string, allowPrivate = false): Promise<Re
 
   const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '')
 
-  const { address, family } = await dns.lookup(hostname)
-  const reason = isBlockedIp(address, family)
-  if (reason) {
-    throw new SsrfError(reason, url)
+  // Resolve ALL addresses to prevent multi-homed bypass where one A/AAAA
+  // record is public but another resolves to a private/blocked IP.
+  const results = await dns.lookup(hostname, { all: true })
+  if (results.length === 0) {
+    throw new SsrfError('DNS resolution returned no addresses', url)
+  }
+  for (const { address: addr, family: fam } of results) {
+    const reason = isBlockedIp(addr, fam)
+    if (reason) {
+      throw new SsrfError(reason, url)
+    }
   }
 
-  return { address, family }
+  // Return the first result for IP pinning (all have been validated)
+  return { address: results[0].address, family: results[0].family }
 }
