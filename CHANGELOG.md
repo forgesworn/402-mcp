@@ -1,3 +1,21 @@
+# [3.0.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v2.1.0...v3.0.0) (2026-03-14)
+
+
+### Bug Fixes
+
+* update funding link to Strike ([c6b8077](https://github.com/TheCryptoDonkey/402-mcp/commit/c6b807722a2d578dbd1a57695b964195629e9d89))
+
+
+### Code Refactoring
+
+* rename l402-mcp to 402-mcp ([7bebbe2](https://github.com/TheCryptoDonkey/402-mcp/commit/7bebbe299323eb7f0a05aef5823cf18fea74da56))
+
+
+### BREAKING CHANGES
+
+* package name, binary, config path (~/.402-mcp/),
+and MCP server name all changed from l402-mcp to 402-mcp.
+
 # [2.1.0](https://github.com/TheCryptoDonkey/l402-mcp/compare/v2.0.1...v2.1.0) (2026-03-14)
 
 
