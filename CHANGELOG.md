@@ -1,3 +1,16 @@
+# [2.0.0](https://github.com/TheCryptoDonkey/l402-mcp/compare/v1.0.0...v2.0.0) (2026-03-14)
+
+
+### Features
+
+* enable npm publishing for v1.0.0 release ([aaa57b2](https://github.com/TheCryptoDonkey/l402-mcp/commit/aaa57b24e4511a40f29c513c21e65b054b4e711b))
+
+
+### BREAKING CHANGES
+
+* first stable release. Package name l402-mcp is
+now published to npm — npx l402-mcp works as documented.
+
 # 1.0.0 (2026-03-14)
 
 

@@ -1,6 +1,6 @@
 {
   "name": "l402-mcp",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "L402 client MCP - AI agents discover, pay for, and consume any L402-gated API",
   "type": "module",
   "bin": {
