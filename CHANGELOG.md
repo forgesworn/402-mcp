@@ -1,3 +1,18 @@
+## [3.1.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.0...v3.1.1) (2026-03-14)
+
+
+### Bug Fixes
+
+* encryption key hex validation, directory permissions, log sanitisation ([8dd6fca](https://github.com/TheCryptoDonkey/402-mcp/commit/8dd6fcada3cfeef0e32bf8e7d26dfd2f0a64dc56))
+* preserve Cashu token when credential storage fails ([1c544fa](https://github.com/TheCryptoDonkey/402-mcp/commit/1c544facd5d4120a11357d4a394e6c9bbc6daa4d))
+* preserve user Authorization header when no L402 credentials exist ([8c3dfa6](https://github.com/TheCryptoDonkey/402-mcp/commit/8c3dfa656abf055eaf923fbcefb408070f89a795))
+* remove forcePinHttps — rewriting HTTPS URLs breaks TLS SNI ([80b35f2](https://github.com/TheCryptoDonkey/402-mcp/commit/80b35f20513a282cad00b25f11f1dc60d42716f3))
+* retry path uses filtered headers, capture storeCredential return value ([51d9940](https://github.com/TheCryptoDonkey/402-mcp/commit/51d994025facf8927af82b1fc3cdaad5309347a1))
+* storeCredential returns boolean, redeem-cashu reports storage failures ([a3425a0](https://github.com/TheCryptoDonkey/402-mcp/commit/a3425a0d20c8531e64baa7566c17b66285ae8c38))
+* surface credential storage failure in buy-credits response ([bcdc372](https://github.com/TheCryptoDonkey/402-mcp/commit/bcdc3724997e9f06f7f5e101d6bf161eb5bb0ea1))
+* validate all DNS records, block fec0::/10 site-local range ([9af9d76](https://github.com/TheCryptoDonkey/402-mcp/commit/9af9d766c44d9607dd760fae8b863173e523e416))
+* validate preimage and macaroon before credential storage, roll back spend on failure ([af1d661](https://github.com/TheCryptoDonkey/402-mcp/commit/af1d66169abd3945099177b8f4f45b17b04952ca))
+
 # [3.1.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.0.0...v3.1.0) (2026-03-14)
 
 
