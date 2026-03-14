@@ -5,3 +5,8 @@ node_modules/
 *.db
 docs/plans/
 docs/superpowers/
+.superpowers/
+.playwright-mcp/
+.DS_Store
+.env
+.env.*
