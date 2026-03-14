@@ -1,3 +1,12 @@
+## [3.1.2](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.1...v3.1.2) (2026-03-14)
+
+
+### Bug Fixes
+
+* enforce spend limits in handlePay, add error handling to pay and search ([e087490](https://github.com/TheCryptoDonkey/402-mcp/commit/e08749019f026098e55801c3dcc07b2ecef8d2d9))
+* reject amountless invoices, roll back spend on wallet exception ([795beaa](https://github.com/TheCryptoDonkey/402-mcp/commit/795beaa3032fdbbc894e513405c7a4901792170d))
+* validate preimage length, warn on unencrypted relay connections ([1a96209](https://github.com/TheCryptoDonkey/402-mcp/commit/1a9620919422b844dcfe3828b689bca122715bab))
+
 ## [3.1.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.0...v3.1.1) (2026-03-14)
 
 
