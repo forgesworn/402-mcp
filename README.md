@@ -100,6 +100,10 @@ Agent: "I need routing data from routing.trotters.cc"
 
 `MAX_AUTO_PAY_SATS` caps any single autonomous payment. Above this limit, the agent must ask the human for approval. The agent can read this limit via `l402_config` and factor it into purchasing decisions.
 
+## Privacy
+
+l402-mcp stores credentials locally on your machine only (`~/.l402-mcp/credentials.json`, encrypted at rest). No data is sent to any third party. No accounts, no tracking, no analytics. Payments use Lightning or Cashu — pseudonymous by design.
+
 ## Ecosystem
 
 | Project | Role |
