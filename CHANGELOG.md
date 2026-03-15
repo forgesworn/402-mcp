@@ -1,3 +1,10 @@
+## [3.3.4](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.3.3...v3.3.4) (2026-03-15)
+
+
+### Bug Fixes
+
+* show QR code for human wallet when credits are exhausted ([66060ac](https://github.com/TheCryptoDonkey/402-mcp/commit/66060acd38aa11039107ab6aaa33713f4a794a0f))
+
 ## [3.3.3](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.3.2...v3.3.3) (2026-03-15)
 
 
