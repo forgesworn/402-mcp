@@ -99,6 +99,11 @@ export function loadConfig(): L402Config {
     console.error(`Warning: BIND_ADDRESS is ${config.bindAddress} — server will be network-accessible without authentication. Use a reverse proxy with TLS and auth for production.`)
   }
 
+  // Warn if CORS allows all origins (potential CSRF risk on HTTP transport)
+  if (config.corsOrigin === '*') {
+    console.error('Warning: CORS_ORIGIN=* — any website can make cross-origin requests to the MCP HTTP transport. Restrict to specific origins in production.')
+  }
+
   // Refuse to operate if TLS verification is disabled (DNS rebinding risk)
   if (process.env.NODE_TLS_REJECT_UNAUTHORIZED === '0') {
     console.error('Warning: NODE_TLS_REJECT_UNAUTHORIZED=0 — TLS certificate validation is disabled. HTTPS DNS rebinding attacks become possible. Do not use in production.')

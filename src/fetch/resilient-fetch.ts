@@ -188,13 +188,22 @@ async function fetchWithTimeoutAndRedirects(
   let currentInit = init ? { ...init } : {}
   let redirectCount = 0
   let currentResolved = resolved
+  // Track cumulative elapsed time across the entire redirect chain to prevent
+  // a malicious server from stalling each hop for the full timeout.
+  const chainStart = Date.now()
 
   while (true) {
     // Pin HTTP URLs to the validated IP to prevent DNS rebinding
     const { pinnedUrl, hostHeader } = pinUrlToResolvedIp(currentUrl, currentResolved)
 
+    const elapsed = Date.now() - chainStart
+    const remainingMs = Math.max(0, timeoutMs - elapsed)
+    if (remainingMs === 0) {
+      throw new TimeoutError(timeoutMs, currentUrl)
+    }
+
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+    const timeoutId = setTimeout(() => controller.abort(), remainingMs)
 
     const fetchInit: RequestInit = {
       ...currentInit,

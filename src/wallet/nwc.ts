@@ -84,7 +84,7 @@ export function createNwcWallet(nwcUri: string): WalletProvider {
                 }
                 const decrypted = decrypt(responseEvent.content, ck)
                 const response = JSON.parse(decrypted)
-                if (response.result?.preimage) {
+                if (typeof response.result?.preimage === 'string' && response.result.preimage) {
                   ck.fill(0)
                   r.close()
                   resolve({ paid: true, preimage: response.result.preimage, method: 'nwc' })
