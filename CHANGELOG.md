@@ -1,3 +1,16 @@
+## [3.1.3](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.2...v3.1.3) (2026-03-15)
+
+
+### Bug Fixes
+
+* cumulative redirect timeout, NWC preimage type check, CORS warning ([bbe47e9](https://github.com/TheCryptoDonkey/402-mcp/commit/bbe47e9b6f4f5741962925de927b01e5685858da))
+* harden relay SSRF guard regex, add nostr-subscribe tests ([7fd217c](https://github.com/TheCryptoDonkey/402-mcp/commit/7fd217caed538db1ad5d817401f3b50f8ec37767))
+* only call tryRecord when auto-pay would actually proceed ([34012db](https://github.com/TheCryptoDonkey/402-mcp/commit/34012db02dc507ffb70cdd93cd163f6c9b391616))
+* reject amountless invoices in buy-credits ([30a885a](https://github.com/TheCryptoDonkey/402-mcp/commit/30a885a800722f2e9646524e1abd8fd26b384e36))
+* reject ws:// relays in production mode to prevent DNS rebinding ([8281b82](https://github.com/TheCryptoDonkey/402-mcp/commit/8281b823f848f51a07c85586afb98f190c804bb7))
+* strip IPv6 zone IDs in SSRF guard, add SSRF check for relay connections ([bc69681](https://github.com/TheCryptoDonkey/402-mcp/commit/bc69681d047c5be5d53391321195059e11ea8756))
+* verify invoice amount matches requested amount before payment ([b475f1b](https://github.com/TheCryptoDonkey/402-mcp/commit/b475f1b3837a4630befa90f9bfba10b17e6f732b))
+
 ## [3.1.2](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.1...v3.1.2) (2026-03-14)
 
 
