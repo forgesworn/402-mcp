@@ -1,3 +1,10 @@
+## [3.4.2](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.1...v3.4.2) (2026-03-15)
+
+
+### Bug Fixes
+
+* render QR as separate text block so newlines display in terminals ([c0c8f72](https://github.com/TheCryptoDonkey/402-mcp/commit/c0c8f726668136f7cead173142a933b838291442))
+
 ## [3.4.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.0...v3.4.1) (2026-03-15)
 
 
