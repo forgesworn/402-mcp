@@ -6,6 +6,8 @@ import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ServerInfo } from '../l402/detect.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { SpendTracker } from '../spend-tracker.js'
+import type { ChallengeCache } from '../l402/challenge-cache.js'
+import type { WalletMethod } from '../wallet/types.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
 
@@ -21,13 +23,16 @@ const BLOCKED_HEADERS = new Set([
 export interface FetchDeps {
   credentialStore: CredentialStore
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
-  payInvoice: (invoice: string) => Promise<{ paid: boolean; preimage?: string; method: string }>
+  payInvoice: (invoice: string, options?: { serverOrigin?: string }) => Promise<{ paid: boolean; preimage?: string; method: string }>
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
   spendTracker: SpendTracker
   parseL402: (header: string) => L402Challenge | null
   decodeBolt11: (invoice: string) => DecodedInvoice
   detectServer: (headers: Headers, body: unknown) => ServerInfo
+  challengeCache: ChallengeCache
+  generateQr: (invoice: string) => Promise<string>
+  walletMethod: () => WalletMethod | undefined
 }
 
 function parseBalance(value: string | null): number | null {
@@ -115,7 +120,8 @@ export async function handleFetch(
     // the spend before payment, closing the TOCTOU gap between check and pay.
     const withinSpendLimit = shouldAttemptPay && deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
     if (shouldAttemptPay && withinSpendLimit) {
-      const payResult = await deps.payInvoice(challenge.invoice)
+      const isHumanWallet = deps.walletMethod() === 'human'
+      const payResult = await deps.payInvoice(challenge.invoice, { serverOrigin: origin })
 
       // Roll back spend-limit reservation if payment failed
       if (!payResult.paid || !payResult.preimage) {
@@ -175,6 +181,43 @@ export async function handleFetch(
             }, null, 2),
           }],
         }
+      }
+
+      // Human wallet timed out — return QR + cache challenge for l402_pay
+      if (isHumanWallet && challenge && decoded.paymentHash) {
+        deps.challengeCache.set({
+          invoice: challenge.invoice,
+          macaroon: challenge.macaroon,
+          paymentHash: decoded.paymentHash,
+          costSats: decoded.costSats,
+          expiresAt: Date.now() + decoded.expiry * 1000,
+          url: args.url,
+        })
+
+        const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            status: 402,
+            costSats: decoded.costSats,
+            invoice: challenge.invoice,
+            paymentHash: decoded.paymentHash,
+            message: `Scan QR to pay ${decoded.costSats} sats. After payment, retry the request or call l402_pay with the paymentHash.`,
+          }, null, 2),
+        }]
+
+        try {
+          const qrDataUri = await deps.generateQr(challenge.invoice)
+          const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
+          content.push({
+            type: 'image' as const,
+            data: base64,
+            mimeType: 'image/png',
+          })
+        } catch {
+          // QR generation failed — text-only response still has the invoice
+        }
+
+        return { content, isError: true as const }
       }
     }
 

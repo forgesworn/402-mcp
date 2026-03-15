@@ -71,7 +71,6 @@ walletProviders.push(createHumanWallet({
   initialIntervalS: config.humanPayPollS,
   maxIntervalS: 30,
   timeoutS: config.humanPayTimeoutS,
-  generateQr,
   fetchFn: resilientFetch,
 }))
 
@@ -81,10 +80,13 @@ function getWallet(method?: WalletMethod): WalletProvider | undefined {
 }
 
 // Helper: pay an invoice using wallet priority
-async function payInvoice(invoice: string, method?: WalletMethod): Promise<{ paid: boolean; preimage?: string; method: string }> {
-  const wallet = getWallet(method)
+async function payInvoice(
+  invoice: string,
+  options?: { serverOrigin?: string; method?: WalletMethod },
+): Promise<{ paid: boolean; preimage?: string; method: string }> {
+  const wallet = getWallet(options?.method)
   if (!wallet) return { paid: false, method: 'none' }
-  const result = await wallet.payInvoice(invoice)
+  const result = await wallet.payInvoice(invoice, { serverOrigin: options?.serverOrigin })
   return { paid: result.paid, preimage: result.preimage, method: result.method }
 }
 
@@ -155,6 +157,9 @@ registerFetchTool(server, {
   parseL402: parseL402Challenge,
   decodeBolt11,
   detectServer,
+  challengeCache,
+  generateQr,
+  walletMethod: () => getWallet()?.method,
 })
 
 registerPayTool(server, {
@@ -179,6 +184,8 @@ registerBuyCreditsTool(server, {
   decodeBolt11,
   maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
   spendTracker,
+  generateQr,
+  walletMethod: () => getWallet()?.method,
 })
 
 registerRedeemCashuTool(server, {

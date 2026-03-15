@@ -27,6 +27,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -51,6 +53,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -83,6 +87,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -92,7 +98,7 @@ describe('handleBuyCredits', () => {
     expect(parsed.creditsReceived).toBe(5500)
     expect(parsed.method).toBe('nwc')
     expect(storeCredential).toHaveBeenCalledWith('https://api.example.com', 'mac456', 'pre123', 'hash456')
-    expect(payInvoice).toHaveBeenCalledWith('lnbc5000n1test', undefined)
+    expect(payInvoice).toHaveBeenCalledWith('lnbc5000n1test', { method: undefined, serverOrigin: 'https://api.example.com' })
   })
 
   it('returns error when create-invoice returns non-ok status', async () => {
@@ -111,6 +117,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -136,6 +144,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -170,6 +180,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
     const parsed1 = JSON.parse(result1.content[0].text)
@@ -185,6 +197,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
     const parsed2 = JSON.parse(result2.content[0].text)
@@ -216,6 +230,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'abc123', expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -245,6 +261,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 99999, paymentHash: 'hash1', expiry: 3600 }),
         maxSpendPerMinuteSats: 100000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -274,6 +292,8 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
@@ -304,11 +324,50 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        walletMethod: () => undefined,
       },
     )
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.paid).toBe(true)
     expect(payInvoice).toHaveBeenCalled()
+  })
+
+  it('returns QR image on human wallet timeout', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        bolt11: 'lnbc5000n1test',
+        macaroon: 'mac456',
+        credit_sats: 5500,
+      }),
+    })
+
+    const result = await handleBuyCredits(
+      { url: 'https://api.example.com/data', amountSats: 5000, method: 'human' },
+      {
+        fetchFn: mockFetch as unknown as typeof fetch,
+        payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
+        storeCredential: vi.fn(),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'a'.repeat(64), expiry: 3600 }),
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+        walletMethod: () => 'human',
+      },
+    )
+
+    expect(result.content).toHaveLength(2)
+    expect(result.content[0].type).toBe('text')
+    expect(result.content[1].type).toBe('image')
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.paid).toBe(false)
+    expect(parsed.invoice).toBe('lnbc5000n1test')
+
+    const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
+    expect(img.data).toBe('QRDATA')
   })
 })

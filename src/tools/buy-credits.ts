@@ -14,11 +14,13 @@ const CreateInvoiceResponse = z.object({
 
 export interface BuyCreditsDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
-  payInvoice: (invoice: string, method?: WalletMethod) => Promise<{ paid: boolean; preimage?: string; method: string }>
+  payInvoice: (invoice: string, options?: { serverOrigin?: string; method?: WalletMethod }) => Promise<{ paid: boolean; preimage?: string; method: string }>
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string) => boolean
   decodeBolt11: (invoice: string) => DecodedInvoice
   maxSpendPerMinuteSats: number
   spendTracker: SpendTracker
+  generateQr: (invoice: string) => Promise<string>
+  walletMethod: () => WalletMethod | undefined
 }
 
 /** Purchases a volume discount credit tier from a toll-booth server. */
@@ -119,7 +121,7 @@ export async function handleBuyCredits(
       }
     }
 
-    const payResult = await deps.payInvoice(invoice, args.method)
+    const payResult = await deps.payInvoice(invoice, { method: args.method, serverOrigin: origin })
 
     // Roll back spend-limit reservation if payment failed
     if (!payResult.paid || !payResult.preimage) {
@@ -143,6 +145,34 @@ export async function handleBuyCredits(
         }],
         ...(stored ? {} : { isError: true as const }),
       }
+    }
+
+    // Human wallet timed out — return QR so user can pay manually
+    if (payResult.method === 'human') {
+      const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          paid: false,
+          invoice,
+          paymentHash: decoded.paymentHash,
+          costSats: args.amountSats,
+          message: `Scan QR to pay ${args.amountSats} sats. After payment, call l402_pay with the paymentHash.`,
+        }, null, 2),
+      }]
+
+      try {
+        const qrDataUri = await deps.generateQr(invoice)
+        const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
+        content.push({
+          type: 'image' as const,
+          data: base64,
+          mimeType: 'image/png',
+        })
+      } catch {
+        // QR generation failed — text response still has invoice
+      }
+
+      return { content, isError: true as const }
     }
 
     return {

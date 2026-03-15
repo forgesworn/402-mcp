@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleFetch, type FetchDeps } from '../../src/tools/fetch.js'
 import { SpendTracker } from '../../src/spend-tracker.js'
+import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
 function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
   return {
@@ -19,6 +20,9 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     parseL402: vi.fn().mockReturnValue(null),
     decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
     detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
+    challengeCache: new ChallengeCache(),
+    generateQr: vi.fn().mockResolvedValue('data:image/png;base64,iVBORtestdata'),
+    walletMethod: () => undefined,
     ...overrides,
   }
 }
@@ -263,5 +267,94 @@ describe('handleFetch', () => {
 
     expect(result.isError).toBe(true)
     expect(parsed.error).toMatch(/Request failed|Network error/)
+  })
+
+  it('returns QR image + text on human wallet timeout', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValueOnce(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc210n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
+      walletMethod: () => 'human',
+      generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    // Should have text + image content blocks
+    expect(result.content).toHaveLength(2)
+    expect(result.content[0].type).toBe('text')
+    expect(result.content[1].type).toBe('image')
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.status).toBe(402)
+    expect(parsed.costSats).toBe(21)
+    expect(parsed.invoice).toBe('lnbc210n1test')
+    expect(parsed.paymentHash).toBe('a'.repeat(64))
+    expect(parsed.message).toContain('Scan QR')
+
+    // Image should be raw base64 (no data URI prefix)
+    const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
+    expect(img.data).toBe('QRDATA')
+    expect(img.mimeType).toBe('image/png')
+
+    // Challenge should be cached for l402_pay
+    expect(deps.challengeCache.get('a'.repeat(64))).toBeDefined()
+
+    // payInvoice should have been called with serverOrigin
+    expect(deps.payInvoice).toHaveBeenCalledWith('lnbc210n1test', { serverOrigin: 'https://api.example.com' })
+
+    // Spend should be unrecorded (payment didn't happen)
+    expect(deps.spendTracker.recentSpend()).toBe(0)
+  })
+
+  it('returns content when human wallet pays within window', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc210n1test"',
+      }, '{}'))
+      .mockResolvedValueOnce(mockResponse(200, { 'x-credit-balance': '950' }, 'paid content'))
+
+    const deps = makeDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'b'.repeat(64), method: 'human' }),
+      walletMethod: () => 'human',
+      generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    // Should return normal paid response (single text block)
+    expect(result.content).toHaveLength(1)
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.status).toBe(200)
+    expect(parsed.body).toBe('paid content')
+    expect(parsed.satsPaid).toBe(21)
+  })
+
+  it('returns text-only response when QR generation fails', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValueOnce(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc210n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
+      walletMethod: () => 'human',
+      generateQr: vi.fn().mockRejectedValue(new Error('QR too large')),
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    // Should still return text block without image
+    expect(result.content).toHaveLength(1)
+    expect(result.content[0].type).toBe('text')
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.status).toBe(402)
+    expect(parsed.invoice).toBe('lnbc210n1test')
   })
 })

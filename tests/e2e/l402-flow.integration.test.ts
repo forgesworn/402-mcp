@@ -123,6 +123,9 @@ describe('L402 integration flow', () => {
         parseL402: parseL402Challenge,
         decodeBolt11,
         detectServer,
+        challengeCache: new ChallengeCache(),
+        generateQr: async () => 'data:image/png;base64,test',
+        walletMethod: () => undefined,
       },
     )
 
@@ -183,6 +186,9 @@ describe('L402 integration flow', () => {
         parseL402: parseL402Challenge,
         decodeBolt11,
         detectServer,
+        challengeCache: new ChallengeCache(),
+        generateQr: async () => 'data:image/png;base64,test',
+        walletMethod: () => undefined,
       },
     )
 
@@ -234,6 +240,9 @@ describe('L402 integration flow', () => {
       parseL402: parseL402Challenge,
       decodeBolt11,
       detectServer,
+      challengeCache: new ChallengeCache(),
+      generateQr: async () => 'data:image/png;base64,test',
+      walletMethod: () => undefined,
     }
 
     // Use up all 110 credits (each request costs 1 sat per defaultInvoiceAmount)

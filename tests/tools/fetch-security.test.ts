@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleFetch, type FetchDeps } from '../../src/tools/fetch.js'
 import { SpendTracker } from '../../src/spend-tracker.js'
+import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
 function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
   return {
@@ -19,6 +20,9 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     parseL402: vi.fn().mockReturnValue(null),
     decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
     detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
+    challengeCache: new ChallengeCache(),
+    generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+    walletMethod: () => undefined,
     ...overrides,
   }
 }
