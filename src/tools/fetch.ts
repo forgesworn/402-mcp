@@ -107,10 +107,13 @@ export async function handleFetch(
 
     // Step 4: Auto-pay if within budget
     const autoPay = args.autoPay ?? false
+    // Only attempt spend tracking when auto-pay would actually proceed,
+    // otherwise tryRecord inflates the spend tracker and blocks legitimate payments.
+    const shouldAttemptPay = !creditsExhausted && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats
     // Use tryRecord as the authoritative gate — atomically checks AND records
     // the spend before payment, closing the TOCTOU gap between check and pay.
-    const withinSpendLimit = decoded.costSats !== null && deps.spendTracker.tryRecord(decoded.costSats, deps.maxSpendPerMinuteSats)
-    if (!creditsExhausted && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats && withinSpendLimit) {
+    const withinSpendLimit = shouldAttemptPay && deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
+    if (shouldAttemptPay && withinSpendLimit) {
       const payResult = await deps.payInvoice(challenge.invoice)
 
       // Roll back spend-limit reservation if payment failed
@@ -175,6 +178,15 @@ export async function handleFetch(
     }
 
     // Step 5: Return 402 challenge for agent decision
+    const message = creditsExhausted
+      ? `Stored credentials for ${origin} have no remaining credits. New payment required.`
+      : !autoPay
+        ? `Payment of ${decoded.costSats} sats required. autoPay disabled.`
+        : decoded.costSats !== null && decoded.costSats > deps.maxAutoPaySats
+          ? `Payment of ${decoded.costSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`
+          : !withinSpendLimit
+            ? 'Per-minute spend limit reached.'
+            : `Payment of ${decoded.costSats} sats required.`
     return {
       content: [{
         type: 'text' as const,
@@ -184,11 +196,7 @@ export async function handleFetch(
           invoice: challenge?.invoice,
           paymentHash: decoded.paymentHash,
           creditsExhausted,
-          message: creditsExhausted
-            ? `Stored credentials for ${origin} have no remaining credits. New payment required.`
-            : !withinSpendLimit
-              ? 'Per-minute spend limit reached.'
-              : `Payment of ${decoded.costSats} sats required. ${!autoPay ? 'autoPay disabled.' : `Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`}`,
+          message,
         }, null, 2),
       }],
     }

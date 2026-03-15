@@ -131,6 +131,46 @@ describe('handleFetch security', () => {
     expect(callHeaders['Authorization']).toBe('Bearer my-api-key')
   })
 
+  it('does not call tryRecord when autoPay is false', async () => {
+    const tracker = new SpendTracker()
+    const tryRecordSpy = vi.spyOn(tracker, 'tryRecord')
+
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc10n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc10n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 10, paymentHash: 'hash1', expiry: 3600 }),
+      spendTracker: tracker,
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: false }, deps)
+
+    // tryRecord should NOT be called when autoPay is false — otherwise it inflates
+    // the spend tracker and blocks legitimate future payments.
+    expect(tryRecordSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not call tryRecord when cost exceeds maxAutoPaySats', async () => {
+    const tracker = new SpendTracker()
+    const tryRecordSpy = vi.spyOn(tracker, 'tryRecord')
+
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc500n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc500n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 500, paymentHash: 'hash1', expiry: 3600 }),
+      maxAutoPaySats: 100,
+      spendTracker: tracker,
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    // tryRecord should NOT be called when cost exceeds maxAutoPaySats
+    expect(tryRecordSpy).not.toHaveBeenCalled()
+  })
+
   it('overwrites user Authorization when L402 credentials exist', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200))
     const deps = makeDeps({
