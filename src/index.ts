@@ -67,7 +67,7 @@ async function generateQr(invoice: string): Promise<{ png: string; text: string 
   const upper = invoice.toUpperCase()
   const [png, text] = await Promise.all([
     QRCode.toDataURL(upper, { type: 'image/png', margin: 2 }),
-    QRCode.toString(upper, { type: 'utf8', margin: 2 }),
+    QRCode.toString(upper, { type: 'terminal', small: true, margin: 2 }),
   ])
   return { png, text }
 }
