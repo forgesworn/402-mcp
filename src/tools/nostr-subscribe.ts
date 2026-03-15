@@ -96,12 +96,23 @@ export function createNostrSubscriber(ssrfAllowPrivate = false): SearchDeps['sub
       }
     }
 
-    // Deduplicate by event id
+    // Deduplicate by event id, then by NIP-33 replaceable key (pubkey + d tag),
+    // keeping the newest event when multiple relays return different versions.
     const seen = new Set<string>()
-    return events.filter((e) => {
+    const unique = events.filter((e) => {
       if (seen.has(e.id)) return false
       seen.add(e.id)
       return true
     })
+    const replaceableMap = new Map<string, NostrEvent>()
+    for (const e of unique) {
+      const dTag = e.tags.find(t => t[0] === 'd')?.[1] ?? ''
+      const key = `${e.pubkey}:${dTag}`
+      const existing = replaceableMap.get(key)
+      if (!existing || e.created_at > existing.created_at) {
+        replaceableMap.set(key, e)
+      }
+    }
+    return [...replaceableMap.values()]
   }
 }

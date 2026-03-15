@@ -328,6 +328,32 @@ describe('handleSearch', () => {
     ])
   })
 
+  it('deduplicates events by pubkey + d tag, keeping newest', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const oldEvent = makeEvent({
+      id: 'evt-old',
+      created_at: now - 3600,
+      content: JSON.stringify({
+        capabilities: [{ name: 'chat', description: 'Old version' }],
+      }),
+    })
+    const newEvent = makeEvent({
+      id: 'evt-new',
+      created_at: now,
+      content: JSON.stringify({
+        capabilities: [{ name: 'chat', description: 'New version', endpoint: '/v1/chat' }],
+      }),
+    })
+
+    // Both events have same pubkey + d tag — should deduplicate to newest
+    const result = await handleSearch({ query: 'chat' }, mockDeps([oldEvent, newEvent]))
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(parsed).toHaveLength(1)
+    expect(parsed[0].capabilities[0].description).toBe('New version')
+    expect(parsed[0].capabilities[0].endpoint).toBe('/v1/chat')
+  })
+
   it('matches query against name, about, and capabilities', async () => {
     const event = makeEvent({
       tags: [

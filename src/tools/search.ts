@@ -92,9 +92,20 @@ export async function handleSearch(
     if (args.topics?.length) relayFilters['#t'] = args.topics
     if (args.paymentMethod) relayFilters['#pmi'] = [args.paymentMethod]
 
-    const events = await deps.subscribeEvents(relays, [KIND_L402_ANNOUNCE], timeout, relayFilters)
+    const rawEvents = await deps.subscribeEvents(relays, [KIND_L402_ANNOUNCE], timeout, relayFilters)
 
-    let services = events.map(parseAnnounceEvent)
+    // NIP-33 dedup: keep only the newest event per pubkey + d tag
+    const replaceableMap = new Map<string, NostrEvent>()
+    for (const e of rawEvents) {
+      const dTag = e.tags.find(t => t[0] === 'd')?.[1] ?? ''
+      const key = `${e.pubkey}:${dTag}`
+      const existing = replaceableMap.get(key)
+      if (!existing || e.created_at > existing.created_at) {
+        replaceableMap.set(key, e)
+      }
+    }
+
+    let services = [...replaceableMap.values()].map(parseAnnounceEvent)
 
     // Filter by query text — relays cannot do substring search so this remains client-side
     if (queryLower) {
