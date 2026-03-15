@@ -1,3 +1,10 @@
+## [3.3.2](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.3.1...v3.3.2) (2026-03-15)
+
+
+### Bug Fixes
+
+* deduplicate replaceable events by pubkey + d tag in search ([c4f2c42](https://github.com/TheCryptoDonkey/402-mcp/commit/c4f2c423f92155af82420adf74af520d6a6ebde9))
+
 ## [3.3.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.3.0...v3.3.1) (2026-03-15)
 
 
