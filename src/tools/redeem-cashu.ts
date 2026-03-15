@@ -77,6 +77,10 @@ export async function handleRedeemCashu(
     }
   }
 
+  // Track whether the server has consumed the token so the catch block
+  // knows whether to roll back the spend-tracker reservation.
+  let redeemSucceeded = false
+
   try {
     // Step 1: Create invoice to get paymentHash and statusToken
     const invoiceResponse = await deps.fetchFn(`${origin}/create-invoice`, {
@@ -135,10 +139,14 @@ export async function handleRedeemCashu(
       }
     }
 
+    // Past this point the server has consumed the token — the spend is
+    // irreversible. Do NOT unrecord tokenSats from here on, even if
+    // local steps (parsing, credential storage) fail.
+    redeemSucceeded = true
+
     const redeemRaw = await redeemResponse.json()
     const redeemValidated = RedeemResponseSchema.safeParse(redeemRaw)
     if (!redeemValidated.success) {
-      deps.spendTracker.unrecord(tokenSats)
       return {
         content: [{
           type: 'text' as const,
@@ -168,7 +176,12 @@ export async function handleRedeemCashu(
       }],
     }
   } catch (err) {
-    deps.spendTracker.unrecord(tokenSats)
+    // Only roll back spend if the error occurred before the redeem POST
+    // succeeded — after that, the server has consumed the token and the
+    // spend is irreversible.
+    if (!redeemSucceeded) {
+      deps.spendTracker.unrecord(tokenSats)
+    }
     return {
       content: [{
         type: 'text' as const,
