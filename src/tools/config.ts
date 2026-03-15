@@ -8,6 +8,7 @@ export interface ConfigState {
   credentialCount: number
 }
 
+/** Returns the agent's current payment capabilities and configuration. */
 export function handleConfig(state: ConfigState) {
   return {
     content: [{
@@ -17,6 +18,7 @@ export function handleConfig(state: ConfigState) {
   }
 }
 
+/** Registers the l402_config tool with the MCP server. */
 export function registerConfigTool(
   server: McpServer,
   getState: () => ConfigState,

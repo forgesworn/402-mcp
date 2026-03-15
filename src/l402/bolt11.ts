@@ -9,6 +9,7 @@ export interface DecodedInvoice {
   expiry: number
 }
 
+/** Decodes a BOLT-11 Lightning invoice to extract amount, payment hash, and expiry. */
 export function decodeBolt11(invoice: string): DecodedInvoice {
   try {
     const decoded = bolt11Lib.decode(invoice)

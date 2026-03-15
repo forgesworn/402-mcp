@@ -99,6 +99,7 @@ async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore): Promi
   }
 }
 
+/** Creates a Cashu wallet provider that melts ecash tokens to pay Lightning invoices. */
 export function createCashuWallet(tokenStore: CashuTokenStore): WalletProvider {
   // Serialise payment attempts to prevent concurrent token consumption races
   let paymentLock: Promise<PaymentResult> = Promise.resolve({ paid: false, method: 'cashu' })

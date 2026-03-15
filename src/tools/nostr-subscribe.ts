@@ -2,11 +2,6 @@ import type { NostrEvent } from 'nostr-tools/core'
 import type { SearchDeps } from './search.js'
 import { validateUrl } from '../fetch/ssrf-guard.js'
 
-/**
- * Creates a Nostr relay subscriber that connects to relays,
- * subscribes to the given event kinds, and collects events
- * for a specified timeout period.
- */
 const MAX_EVENTS = 1000
 
 /** Optional tag filters to pass to relays, reducing bandwidth by filtering server-side. */
@@ -15,6 +10,7 @@ export interface SubscribeFilters {
   '#pmi'?: string[]
 }
 
+/** Creates a Nostr relay subscriber that connects, subscribes to event kinds, and collects events within a timeout. */
 export function createNostrSubscriber(ssrfAllowPrivate = false): SearchDeps['subscribeEvents'] {
   return async (relays: string[], kinds: number[], timeout: number, filters?: SubscribeFilters): Promise<NostrEvent[]> => {
     const { Relay } = await import('nostr-tools/relay')

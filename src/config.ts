@@ -37,6 +37,7 @@ function assertRange(name: string, value: number, min: number, max: number): voi
   }
 }
 
+/** Loads and validates configuration from environment variables, applying defaults. */
 export function loadConfig(): L402Config {
   const defaultCredentialStore = resolve(homedir(), '.402-mcp', 'credentials.json')
 

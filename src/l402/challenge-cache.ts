@@ -12,6 +12,7 @@ const PAYMENT_HASH_RE = /^[0-9a-f]{64}$/
 /** Maximum length for cached string fields to prevent memory exhaustion. */
 const MAX_STRING_LEN = 10_000
 
+/** TTL cache for L402 challenges, keyed by payment hash. Evicts expired entries automatically. */
 export class ChallengeCache {
   private cache = new Map<string, CachedChallenge>()
 

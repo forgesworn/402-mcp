@@ -18,6 +18,7 @@ export interface PayDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
 }
 
+/** Pays a Lightning invoice using the configured wallet priority (NWC, Cashu, human). */
 export async function handlePay(
   args: {
     invoice?: string
@@ -163,6 +164,7 @@ export async function handlePay(
   }
 }
 
+/** Registers the l402_pay tool with the MCP server. */
 export function registerPayTool(server: McpServer, deps: PayDeps): void {
   server.registerTool(
     'l402_pay',

@@ -21,6 +21,7 @@ export interface BuyCreditsDeps {
   spendTracker: SpendTracker
 }
 
+/** Purchases a volume discount credit tier from a toll-booth server. */
 export async function handleBuyCredits(
   args: { url: string; amountSats?: number; method?: WalletMethod },
   deps: BuyCreditsDeps,
@@ -162,6 +163,7 @@ export async function handleBuyCredits(
   }
 }
 
+/** Registers the l402_buy_credits tool with the MCP server. */
 export function registerBuyCreditsTool(server: McpServer, deps: BuyCreditsDeps): void {
   server.registerTool(
     'l402_buy_credits',

@@ -13,6 +13,7 @@ export interface DiscoverDeps {
   decodeBolt11: (invoice: string) => DecodedInvoice
 }
 
+/** Probes an L402 endpoint to discover pricing and server type without making a payment. */
 export async function handleDiscover(
   args: { url: string; method?: string },
   deps: DiscoverDeps,
@@ -99,6 +100,7 @@ export async function handleDiscover(
   }
 }
 
+/** Registers the l402_discover tool with the MCP server. */
 export function registerDiscoverTool(
   server: McpServer,
   deps: DiscoverDeps,

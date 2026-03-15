@@ -8,6 +8,7 @@ export interface PollOptions {
   checkSettlement: (paymentHash: string) => Promise<{ settled: boolean; preimage?: string }>
 }
 
+/** Polls a toll-booth server for invoice settlement, returning once paid or timed out. */
 export async function pollForSettlement(
   paymentHash: string,
   options: PollOptions,
@@ -37,6 +38,7 @@ export interface HumanWalletOptions {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
 }
 
+/** Creates a human-in-the-loop wallet that presents QR codes and polls for settlement. */
 export function createHumanWallet(options: HumanWalletOptions): WalletProvider & { setServerOrigin(origin: string): void } {
   let serverOrigin = ''
 

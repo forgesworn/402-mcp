@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "l402": {
+      "command": "npx",
+      "args": ["402-mcp"],
+      "env": {
+        "NWC_URI": "nostr+walletconnect://your-wallet-pubkey?relay=wss://relay.example.com&secret=your-secret",
+        "MAX_AUTO_PAY_SATS": "1000",
+        "MAX_SPEND_PER_MINUTE_SATS": "10000"
+      }
+    }
+  }
+}

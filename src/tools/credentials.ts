@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { CredentialStore } from '../store/credentials.js'
 
+/** Lists all stored L402 credentials with their cached balances, redacting secret material. */
 export function handleCredentials(store: CredentialStore) {
   return {
     content: [{
@@ -10,6 +11,7 @@ export function handleCredentials(store: CredentialStore) {
   }
 }
 
+/** Registers the l402_credentials tool with the MCP server. */
 export function registerCredentialsTool(server: McpServer, store: CredentialStore): void {
   server.registerTool(
     'l402_credentials',

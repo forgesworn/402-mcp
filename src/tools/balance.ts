@@ -4,6 +4,7 @@ import type { CredentialStore } from '../store/credentials.js'
 
 const STALE_THRESHOLD_MS = 5 * 60 * 1000
 
+/** Returns the cached credit balance for a specific server origin. */
 export function handleBalance(args: { origin: string }, store: CredentialStore) {
   // Normalise to origin (strips path, trailing slash) to match credential store keys
   let origin: string
@@ -40,6 +41,7 @@ export function handleBalance(args: { origin: string }, store: CredentialStore) 
   }
 }
 
+/** Registers the l402_balance tool with the MCP server. */
 export function registerBalanceTool(server: McpServer, store: CredentialStore): void {
   server.registerTool(
     'l402_balance',

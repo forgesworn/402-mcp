@@ -16,6 +16,7 @@ export interface CredentialEntry extends StoredCredential {
   origin: string
 }
 
+/** Encrypted persistent store for L402 credentials (macaroons, preimages, balances). */
 export class CredentialStore {
   /** Credentials older than 7 days are automatically purged on access. */
   static readonly MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
@@ -27,6 +28,7 @@ export class CredentialStore {
     // load() is now called from init()
   }
 
+  /** Initialises encryption key (OS keychain or file fallback) and loads persisted credentials. */
   async init(): Promise<{ keySource: 'keychain' | 'file' }> {
     const result = await getOrCreateKey()
     this.key = result.key

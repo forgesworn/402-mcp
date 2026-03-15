@@ -2,6 +2,7 @@ export interface ServerInfo {
   type: 'toll-booth' | 'generic'
 }
 
+/** Detects whether the server is a toll-booth instance from response headers and body shape. */
 export function detectServer(headers: Headers, body: unknown): ServerInfo {
   const poweredBy = headers.get('x-powered-by')
   if (poweredBy?.toLowerCase() === 'toll-booth') {

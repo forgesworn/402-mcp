@@ -3,6 +3,7 @@ export interface L402Challenge {
   invoice: string
 }
 
+/** Parses the L402 challenge (macaroon + invoice) from a WWW-Authenticate header. */
 export function parseL402Challenge(header: string): L402Challenge | null {
   const match = header.match(/^(?:L402|LSAT)\s+(.+)$/i)
   if (!match) return null

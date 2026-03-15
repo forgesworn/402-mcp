@@ -13,6 +13,7 @@ interface TokenStoreData {
   tokens: StoredToken[]
 }
 
+/** Encrypted persistent store for Cashu ecash tokens. */
 export class CashuTokenStore {
   private data: TokenStoreData = { tokens: [] }
   private key: Buffer | null = null
@@ -21,6 +22,7 @@ export class CashuTokenStore {
     // load() is now called from init()
   }
 
+  /** Initialises encryption key and loads persisted tokens. */
   async init(): Promise<{ keySource: 'keychain' | 'file' }> {
     const result = await getOrCreateKey()
     this.key = result.key
@@ -41,6 +43,7 @@ export class CashuTokenStore {
     this.save()
   }
 
+  /** Removes and returns the first token (FIFO). Used during Cashu melt payments. */
   consumeFirst(): StoredToken | undefined {
     const token = this.data.tokens.shift()
     if (token) this.save()

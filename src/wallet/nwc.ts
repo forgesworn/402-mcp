@@ -1,5 +1,6 @@
 import type { WalletProvider, PaymentResult } from './types.js'
 
+/** Creates a Nostr Wallet Connect provider that pays Lightning invoices via the NWC protocol. */
 export function createNwcWallet(nwcUri: string): WalletProvider {
   return {
     method: 'nwc',

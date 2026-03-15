@@ -1,9 +1,6 @@
 import { SsrfError, TimeoutError, RetryExhaustedError, ResponseTooLargeError, DowngradeError } from '../fetch/errors.js'
 
-/**
- * Convert an error to a safe, user-facing message that does not leak
- * stack traces, file paths, or internal details.
- */
+/** Converts an error to a user-facing message without leaking internal details or stack traces. */
 export function safeErrorMessage(err: unknown): string {
   if (err instanceof SsrfError) return 'Request blocked: target address is not allowed.'
   if (err instanceof TimeoutError) return 'Request timed out.'

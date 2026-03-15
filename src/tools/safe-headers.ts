@@ -19,7 +19,7 @@ const SAFE_HEADERS = new Set([
   'vary',
 ])
 
-/** Return only whitelisted response headers. */
+/** Returns only whitelisted response headers, stripping security-sensitive values. */
 export function filterResponseHeaders(headers: Headers): Record<string, string> {
   const filtered: Record<string, string> = {}
   for (const [key, value] of headers.entries()) {

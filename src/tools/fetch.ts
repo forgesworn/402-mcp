@@ -36,6 +36,7 @@ function parseBalance(value: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
+/** Makes an HTTP request with automatic L402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
   args: { url: string; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean },
   deps: FetchDeps,
@@ -211,6 +212,7 @@ export async function handleFetch(
   }
 }
 
+/** Registers the l402_fetch tool with the MCP server. */
 export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402_fetch',

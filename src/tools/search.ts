@@ -27,7 +27,7 @@ export interface ParsedService {
   capabilities: { name: string; description: string }[]
 }
 
-/** Extract service metadata from a kind 31402 Nostr event. */
+/** Extracts service metadata (name, URL, pricing, capabilities) from a kind 31402 Nostr event. */
 export function parseAnnounceEvent(event: NostrEvent): ParsedService {
   const getTag = (key: string): string | undefined =>
     event.tags.find(t => t[0] === key)?.[1]
@@ -75,7 +75,7 @@ export function parseAnnounceEvent(event: NostrEvent): ParsedService {
   }
 }
 
-/** Search for L402 services by querying Nostr relays for kind 31402 events. */
+/** Searches Nostr relays for L402 service announcements matching a query, topic, or payment method. */
 export async function handleSearch(
   args: { query: string; relays?: string[]; topics?: string[]; paymentMethod?: string; maxResults?: number; timeout?: number },
   deps: SearchDeps,
@@ -126,6 +126,7 @@ export async function handleSearch(
   }
 }
 
+/** Registers the l402_search tool with the MCP server. */
 export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
   server.registerTool(
     'l402_search',

@@ -20,6 +20,7 @@ export interface RedeemCashuDeps {
   removeToken: (tokenStr: string) => void
 }
 
+/** Redeems Cashu ecash tokens directly with a toll-booth server, bypassing the Lightning round-trip. */
 export async function handleRedeemCashu(
   args: { url: string; token: string },
   deps: RedeemCashuDeps,
@@ -123,6 +124,7 @@ export async function handleRedeemCashu(
   }
 }
 
+/** Registers the l402_redeem_cashu tool with the MCP server. */
 export function registerRedeemCashuTool(server: McpServer, deps: RedeemCashuDeps): void {
   server.registerTool(
     'l402_redeem_cashu',

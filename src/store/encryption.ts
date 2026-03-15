@@ -23,6 +23,7 @@ export interface KeyResult {
   source: 'keychain' | 'file'
 }
 
+/** Encrypts plaintext using AES-256-GCM with a random IV. */
 export function encrypt(plaintext: string, key: Buffer): EncryptedPayload {
   const iv = randomBytes(IV_BYTES)
   const cipher = createCipheriv(ALGORITHM, key, iv)
@@ -35,6 +36,7 @@ export function encrypt(plaintext: string, key: Buffer): EncryptedPayload {
   }
 }
 
+/** Decrypts an AES-256-GCM encrypted payload. */
 export function decrypt(payload: EncryptedPayload, key: Buffer): string {
   const iv = Buffer.from(payload.iv, 'hex')
   const tag = Buffer.from(payload.tag, 'hex')
@@ -45,6 +47,7 @@ export function decrypt(payload: EncryptedPayload, key: Buffer): string {
   return decrypted.toString('utf8')
 }
 
+/** Type guard that checks whether data matches the encrypted payload shape. */
 export function isEncrypted(data: unknown): data is EncryptedPayload {
   if (data === null || data === undefined || typeof data !== 'object' || Array.isArray(data)) return false
   const obj = data as Record<string, unknown>
