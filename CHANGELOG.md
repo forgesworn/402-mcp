@@ -1,3 +1,15 @@
+## [3.1.4](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.3...v3.1.4) (2026-03-15)
+
+
+### Bug Fixes
+
+* block startup when TLS validation is disabled without opt-in ([833720f](https://github.com/TheCryptoDonkey/402-mcp/commit/833720f91ddf03905da54b043a8e0814e7dfbfb5))
+* decouple insecure TLS opt-in from SSRF_ALLOW_PRIVATE ([3167f2b](https://github.com/TheCryptoDonkey/402-mcp/commit/3167f2b449907f91498d678f63aa5566f3eafd04))
+* don't roll back spend tracker after successful Cashu redeem ([375abc0](https://github.com/TheCryptoDonkey/402-mcp/commit/375abc0bd91d6f92dcc8cd746d576f391f775112))
+* enforce spend limits on redeem-cashu tool ([c650066](https://github.com/TheCryptoDonkey/402-mcp/commit/c6500664077cedba4e4f1ca2021fb285230f1568))
+* validate NWC preimage format and response pubkey ([17addb5](https://github.com/TheCryptoDonkey/402-mcp/commit/17addb5ee2460629bb62223b3ee0da2aa60c0390))
+* validate preimage length in handleFetch, require integer amountSats ([1ecd279](https://github.com/TheCryptoDonkey/402-mcp/commit/1ecd279b9eed6f9265fb4ebe57a1a3b234c2e17b))
+
 ## [3.1.3](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.1.2...v3.1.3) (2026-03-15)
 
 
