@@ -5,51 +5,32 @@
 [![Node](https://img.shields.io/badge/Node-%3E%3D18-green)](https://nodejs.org/)
 [![Nostr](https://img.shields.io/badge/Nostr-Zap%20me-purple)](https://primal.net/p/npub1mgvlrnf5hm9yf0n5mf9nqmvarhvxkc6remu5ec3vf8r0txqkuk7su0e7q2)
 
-L402 + x402 client MCP that gives AI agents economic agency. Discover, pay for, and consume any payment-gated API - no human registration, no API keys, no middlemen.
+L402 + x402 client MCP that gives AI agents economic agency. Discover, pay for, and consume any payment-gated API — no human registration, no API keys, no middlemen.
 
-Works with **any L402-compliant server** (toll-booth, Aperture, or any future implementation), with bonus features when talking to a [toll-booth](https://github.com/TheCryptoDonkey/toll-booth) instance.
-
-## Why 402-mcp?
-
-The L402 ecosystem is growing fast - Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools), Coinbase's x402, and others. 402-mcp is the **payment-rail agnostic** alternative:
-
-| | 402-mcp | Lightning Labs agent tools |
-|---|---|---|
-| **Payment rails** | NWC + Cashu + human fallback | Lightning only |
-| **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
-| **Server compatibility** | Any L402 server | Aperture-focused |
-| **Spend safety** | Per-payment cap + rolling 60s window | Per-call max-cost |
-| **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
-| **Privacy** | No PII, SSRF protection, error sanitisation | Standard |
-
-Use Lightning Labs' tools if you want agents that **run their own Lightning node**. Use 402-mcp if you want agents that **pay from any wallet without infrastructure**.
+- **Discover** paid APIs on Nostr — no URLs needed upfront
+- **Auto-pay** with Lightning (NWC), Cashu ecash, or human QR fallback
+- **Credentials cached and encrypted** at rest (AES-256-GCM)
+- **Works with any L402 server** — toll-booth, Aperture, or any future implementation
 
 ## Quick start
+
+**1. Install**
 
 ```bash
 npx 402-mcp
 ```
 
-### Claude Desktop / Cursor
+**2. Connect to Claude Code**
 
-Add to your MCP configuration:
-
-```json
-{
-  "mcpServers": {
-    "l402": {
-      "command": "npx",
-      "args": ["402-mcp"],
-      "env": {
-        "NWC_URI": "nostr+walletconnect://...",
-        "MAX_AUTO_PAY_SATS": "1000"
-      }
-    }
-  }
-}
+```bash
+claude mcp add 402-mcp -- npx 402-mcp
 ```
 
-See [examples/](./examples/) for more configuration samples.
+**3. Try it**
+
+Ask Claude: *"Search for paid joke APIs using l402_search"* — no wallet needed, just discovery.
+
+Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) to set up a wallet and watch your agent pay for its first API call.
 
 ## Configuration
 
@@ -115,41 +96,15 @@ Agent: "I need routing data from routing.trotters.cc"
    -> 200 OK, route data, 545 credits remaining
 ```
 
-## Service discovery
-
-Agents can discover paid APIs without knowing URLs upfront. `l402_search` queries Nostr relays for kind 31402 service announcements — the decentralised registry for L402 services.
-
-```mermaid
-sequenceDiagram
-    participant Agent as AI Agent
-    participant MCP as 402-mcp
-    participant Relay as Nostr Relays
-
-    Agent->>MCP: l402_search("routing")
-    MCP->>Relay: Subscribe kind 31402
-    Relay-->>MCP: Matching service events
-    MCP-->>Agent: Services with URLs, pricing, capabilities
-    Agent->>MCP: l402_discover(service_url)
-    Note over Agent: Continue with payment flow...
-```
+For detailed architecture and payment flow diagrams, see [docs/architecture.md](./docs/architecture.md).
 
 ## Payment methods
 
-```mermaid
-graph TD
-    Pay["Pay Invoice"]
-    Pay --> NWC{"NWC configured?"}
-    NWC -->|Yes| NWCPay["Pay via Lightning wallet<br/>(fully autonomous)"]
-    NWC -->|No| CashuQ{"Cashu tokens<br/>available?"}
-    CashuQ -->|Yes| CashuPay["Melt ecash tokens<br/>(fully autonomous)"]
-    CashuQ -->|No| HumanPay["Present QR code<br/>(human pays)"]
-```
-
 Three payment rails, tried in priority order:
 
-1. **NWC** (Nostr Wallet Connect) - fully autonomous; pays from your connected wallet
-2. **Cashu** - fully autonomous; melts ecash tokens to pay invoices
-3. **Human-in-the-loop** - presents QR code, polls for settlement
+1. **NWC** (Nostr Wallet Connect) — fully autonomous; pays from your connected wallet
+2. **Cashu** — fully autonomous; melts ecash tokens to pay invoices
+3. **Human-in-the-loop** — presents QR code, polls for settlement
 
 The agent can override the method per-call, or you can configure only the methods you want.
 
@@ -159,73 +114,7 @@ The agent can override the method per-call, or you can configure only the method
 
 ## Privacy
 
-402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). No data is sent to any third party. No accounts, no tracking, no analytics. Payments use Lightning or Cashu - pseudonymous by design.
-
-## Architecture
-
-```mermaid
-graph TB
-    Agent["AI Agent<br/>(Claude, Cursor, etc.)"]
-    MCP["402-mcp<br/>MCP Server"]
-
-    subgraph Wallets["Payment Rails"]
-        NWC["NWC<br/>(Lightning)"]
-        Cashu["Cashu<br/>(Ecash)"]
-        Human["Human-in-the-loop<br/>(QR code)"]
-    end
-
-    subgraph Storage["Local Storage"]
-        Creds["Credential Store<br/>(AES-256-GCM)"]
-        Tokens["Cashu Token Store"]
-    end
-
-    subgraph Servers["Any L402 Server"]
-        TB["toll-booth"]
-        Aperture["Aperture"]
-        Other["Any L402<br/>implementation"]
-    end
-
-    Nostr["Nostr Relays<br/>(Service Discovery)"]
-
-    Agent <-->|"MCP protocol<br/>(stdio / HTTP)"| MCP
-    MCP --> NWC
-    MCP --> Cashu
-    MCP --> Human
-    MCP <--> Creds
-    MCP <--> Tokens
-    MCP <-->|"HTTP + L402"| TB
-    MCP <-->|"HTTP + L402"| Aperture
-    MCP <-->|"HTTP + L402"| Other
-    MCP <-->|"kind 31402"| Nostr
-```
-
-## Payment flow
-
-```mermaid
-sequenceDiagram
-    participant Agent as AI Agent
-    participant MCP as 402-mcp
-    participant API as L402 API
-    participant Wallet as Wallet (NWC/Cashu)
-
-    Agent->>MCP: l402_discover(url)
-    MCP->>API: GET /endpoint
-    API-->>MCP: 402 + invoice + macaroon
-    MCP-->>Agent: price: 10 sats, server: toll-booth
-
-    Agent->>Agent: Reason about pricing
-
-    Agent->>MCP: l402_fetch(url)
-    MCP->>API: GET /endpoint
-    API-->>MCP: 402 + invoice + macaroon
-    MCP->>MCP: Amount ≤ MAX_AUTO_PAY_SATS?
-    MCP->>Wallet: Pay invoice
-    Wallet-->>MCP: preimage
-    MCP->>MCP: Store credential
-    MCP->>API: GET /endpoint + Authorization: L402
-    API-->>MCP: 200 OK + data
-    MCP-->>Agent: Response data + balance
-```
+402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). No data is sent to any third party. No accounts, no tracking, no analytics. Payments use Lightning or Cashu — pseudonymous by design.
 
 ## Ecosystem
 
@@ -235,6 +124,24 @@ sequenceDiagram
 | [satgate](https://github.com/TheCryptoDonkey/satgate) | Pay-per-token AI inference proxy (built on toll-booth) |
 | **[402-mcp](https://github.com/TheCryptoDonkey/402-mcp)** | **MCP client — AI agents discover, pay, and consume L402 + x402 APIs** |
 | [402-announce](https://github.com/TheCryptoDonkey/402-announce) | Publish L402 services on Nostr for decentralised discovery |
+
+<details>
+<summary>How does this compare to alternatives?</summary>
+
+The L402 ecosystem is growing fast — Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools), Coinbase's x402, and others. 402-mcp is the **payment-rail agnostic** alternative:
+
+| | 402-mcp | Lightning Labs agent tools |
+|---|---|---|
+| **Payment rails** | NWC + Cashu + human fallback | Lightning only |
+| **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
+| **Server compatibility** | Any L402 server | Aperture-focused |
+| **Spend safety** | Per-payment cap + rolling 60s window | Per-call max-cost |
+| **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
+| **Privacy** | No PII, SSRF protection, error sanitisation | Standard |
+
+Use Lightning Labs' tools if you want agents that **run their own Lightning node**. Use 402-mcp if you want agents that **pay from any wallet without infrastructure**.
+
+</details>
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
 
