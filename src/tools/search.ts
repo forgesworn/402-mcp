@@ -143,7 +143,7 @@ export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
   server.registerTool(
     'l402_search',
     {
-      description: 'Search for L402 services on Nostr. Discovers paid APIs by querying relay announcements (kind 31402). Returns service names, URLs, pricing, and payment methods. Use the URL with l402_discover or l402_fetch to interact.',
+      description: 'Search for paid APIs and services. Use this when the user wants something that might be available as a paid service — jokes, data, AI, content, etc. Discovers services announced on Nostr and returns their URLs, pricing, and capabilities. Then use l402_fetch with the URL to access the service.',
       inputSchema: {
         query: z.string().max(200).describe('Search query to match against service names, descriptions, and capabilities'),
         relays: z.array(z.url()).max(10).optional().describe('Nostr relay URLs to query (defaults to popular public relays)'),

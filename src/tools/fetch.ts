@@ -299,7 +299,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402_fetch',
     {
-      description: 'Make an HTTP request with L402 payment support. Uses stored credentials if available. If a 402 challenge is received and autoPay is true and cost is within MAX_AUTO_PAY_SATS, pays automatically and retries. autoPay defaults to false — set to true to enable automatic payments.',
+      description: 'Fetch a URL with automatic payment handling. Use this to access any paid API or service. Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. Set autoPay to true for seamless access.',
       inputSchema: {
         url: z.url().describe('The URL to request'),
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).optional().default('GET').describe('HTTP method'),

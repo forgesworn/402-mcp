@@ -231,7 +231,7 @@ export function registerPayTool(server: McpServer, deps: PayDeps): void {
   server.registerTool(
     'l402_pay',
     {
-      description: 'Pay a specific L402 invoice. Use this when you want to reason about costs before paying rather than auto-paying via l402_fetch. Can reuse a cached challenge from l402_discover by passing just the paymentHash. Methods: "nwc" (autonomous Lightning), "cashu" (autonomous ecash), "human" (present QR code and poll for settlement).',
+      description: 'Confirm payment and store credentials. Call this after l402_fetch returns a 402 with a paymentHash — polls the payment server for settlement (up to 30s for human wallet), then stores the credential so the next l402_fetch succeeds. For human wallets, call this immediately after showing the payment URL to the user.',
       inputSchema: {
         invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice to pay. Optional if paymentHash matches a cached challenge from l402_discover.'),
         macaroon: z.string().max(10_000).optional().describe('Macaroon from the L402 challenge. Optional if paymentHash matches a cached challenge.'),
