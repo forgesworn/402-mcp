@@ -269,14 +269,14 @@ describe('handleFetch', () => {
     expect(parsed.error).toMatch(/Request failed|Network error/)
   })
 
-  it('returns QR image + text on human wallet timeout', async () => {
+  it('returns QR image + text immediately for human wallet without calling payInvoice', async () => {
     const deps = makeDeps({
       fetchFn: vi.fn().mockResolvedValueOnce(mockResponse(402, {
         'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc210n1test"',
       }, '{}')) as unknown as typeof fetch,
       parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
       decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
-      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human' }),
       walletMethod: () => 'human',
       generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
     })
@@ -294,6 +294,7 @@ describe('handleFetch', () => {
     expect(parsed.invoice).toBe('lnbc210n1test')
     expect(parsed.paymentHash).toBe('a'.repeat(64))
     expect(parsed.message).toContain('Scan QR')
+    expect(parsed.message).toContain('l402_pay')
 
     // Image should be raw base64 (no data URI prefix)
     const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
@@ -303,37 +304,11 @@ describe('handleFetch', () => {
     // Challenge should be cached for l402_pay
     expect(deps.challengeCache.get('a'.repeat(64))).toBeDefined()
 
-    // payInvoice should have been called with serverOrigin
-    expect(deps.payInvoice).toHaveBeenCalledWith('lnbc210n1test', { serverOrigin: 'https://api.example.com' })
+    // payInvoice should NOT have been called — human wallet returns immediately
+    expect(deps.payInvoice).not.toHaveBeenCalled()
 
-    // Spend should be unrecorded (payment didn't happen)
+    // Spend should be unrecorded (human hasn't paid yet)
     expect(deps.spendTracker.recentSpend()).toBe(0)
-  })
-
-  it('returns content when human wallet pays within window', async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(mockResponse(402, {
-        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc210n1test"',
-      }, '{}'))
-      .mockResolvedValueOnce(mockResponse(200, { 'x-credit-balance': '950' }, 'paid content'))
-
-    const deps = makeDeps({
-      fetchFn: fetchMock as unknown as typeof fetch,
-      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
-      decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
-      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'b'.repeat(64), method: 'human' }),
-      walletMethod: () => 'human',
-      generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
-    })
-
-    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
-
-    // Should return normal paid response (single text block)
-    expect(result.content).toHaveLength(1)
-    const parsed = JSON.parse(result.content[0].text)
-    expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('paid content')
-    expect(parsed.satsPaid).toBe(21)
   })
 
   it('returns text-only response when QR generation fails', async () => {
@@ -343,7 +318,7 @@ describe('handleFetch', () => {
       }, '{}')) as unknown as typeof fetch,
       parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc210n1test' }),
       decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
-      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human' }),
       walletMethod: () => 'human',
       generateQr: vi.fn().mockRejectedValue(new Error('QR too large')),
     })
@@ -356,5 +331,8 @@ describe('handleFetch', () => {
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.status).toBe(402)
     expect(parsed.invoice).toBe('lnbc210n1test')
+
+    // payInvoice should NOT have been called
+    expect(deps.payInvoice).not.toHaveBeenCalled()
   })
 })

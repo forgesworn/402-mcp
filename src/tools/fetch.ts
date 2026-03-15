@@ -120,7 +120,46 @@ export async function handleFetch(
     // the spend before payment, closing the TOCTOU gap between check and pay.
     const withinSpendLimit = shouldAttemptPay && deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
     if (shouldAttemptPay && withinSpendLimit) {
-      const isHumanWallet = deps.walletMethod() === 'human'
+      // For human wallet, return QR immediately instead of blocking on poll
+      if (deps.walletMethod() === 'human' && challenge && decoded.paymentHash) {
+        // Roll back the spend tracking — human hasn't paid yet
+        deps.spendTracker.unrecord(decoded.costSats!)
+
+        deps.challengeCache.set({
+          invoice: challenge.invoice,
+          macaroon: challenge.macaroon,
+          paymentHash: decoded.paymentHash,
+          costSats: decoded.costSats,
+          expiresAt: Date.now() + decoded.expiry * 1000,
+          url: args.url,
+        })
+
+        const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            status: 402,
+            costSats: decoded.costSats,
+            invoice: challenge.invoice,
+            paymentHash: decoded.paymentHash,
+            message: `Scan QR to pay ${decoded.costSats} sats. After payment, call l402_pay with paymentHash "${decoded.paymentHash}" to complete.`,
+          }, null, 2),
+        }]
+
+        try {
+          const qrDataUri = await deps.generateQr(challenge.invoice)
+          const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
+          content.push({
+            type: 'image' as const,
+            data: base64,
+            mimeType: 'image/png',
+          })
+        } catch {
+          // QR generation failed — text-only response still has the invoice
+        }
+
+        return { content, isError: true as const }
+      }
+
       const payResult = await deps.payInvoice(challenge.invoice, { serverOrigin: origin })
 
       // Roll back spend-limit reservation if payment failed
@@ -181,43 +220,6 @@ export async function handleFetch(
             }, null, 2),
           }],
         }
-      }
-
-      // Human wallet timed out — return QR + cache challenge for l402_pay
-      if (isHumanWallet && challenge && decoded.paymentHash) {
-        deps.challengeCache.set({
-          invoice: challenge.invoice,
-          macaroon: challenge.macaroon,
-          paymentHash: decoded.paymentHash,
-          costSats: decoded.costSats,
-          expiresAt: Date.now() + decoded.expiry * 1000,
-          url: args.url,
-        })
-
-        const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
-          type: 'text' as const,
-          text: JSON.stringify({
-            status: 402,
-            costSats: decoded.costSats,
-            invoice: challenge.invoice,
-            paymentHash: decoded.paymentHash,
-            message: `Scan QR to pay ${decoded.costSats} sats. After payment, retry the request or call l402_pay with the paymentHash.`,
-          }, null, 2),
-        }]
-
-        try {
-          const qrDataUri = await deps.generateQr(challenge.invoice)
-          const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
-          content.push({
-            type: 'image' as const,
-            data: base64,
-            mimeType: 'image/png',
-          })
-        } catch {
-          // QR generation failed — text-only response still has the invoice
-        }
-
-        return { content, isError: true as const }
       }
     }
 
