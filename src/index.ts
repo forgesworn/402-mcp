@@ -19,6 +19,7 @@ import { registerDiscoverTool } from './tools/discover.js'
 import { registerFetchTool } from './tools/fetch.js'
 import { registerPayTool } from './tools/pay.js'
 import { registerCredentialsTool } from './tools/credentials.js'
+import { registerStoreTokenTool } from './tools/store-token.js'
 import { registerBalanceTool } from './tools/balance.js'
 import { registerBuyCreditsTool } from './tools/buy-credits.js'
 import { registerRedeemCashuTool } from './tools/redeem-cashu.js'
@@ -181,6 +182,9 @@ registerPayTool(server, {
 
 registerCredentialsTool(server, credentialStore)
 registerBalanceTool(server, credentialStore)
+registerStoreTokenTool(server, {
+  storeCredential,
+})
 
 registerBuyCreditsTool(server, {
   fetchFn: resilientFetch,
