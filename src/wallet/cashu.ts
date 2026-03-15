@@ -1,7 +1,7 @@
-import type { WalletProvider, PaymentResult } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
 import type { CashuTokenStore } from '../store/cashu-tokens.js'
 
-async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore): Promise<PaymentResult> {
+async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _options?: PayInvoiceOptions): Promise<PaymentResult> {
   const token = tokenStore.consumeFirst()
   if (!token) {
     return { paid: false, method: 'cashu', reason: 'No Cashu tokens available' }
@@ -110,10 +110,10 @@ export function createCashuWallet(tokenStore: CashuTokenStore): WalletProvider {
       return tokenStore.totalBalance() > 0
     },
 
-    payInvoice(invoice: string): Promise<PaymentResult> {
+    payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult> {
       paymentLock = paymentLock
         .catch(() => {})  // never let a prior rejection block the chain
-        .then(() => doPayInvoice(invoice, tokenStore))
+        .then(() => doPayInvoice(invoice, tokenStore, options))
       return paymentLock
     },
   }

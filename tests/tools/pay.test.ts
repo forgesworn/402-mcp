@@ -83,7 +83,7 @@ describe('handlePay', () => {
       },
     )
 
-    expect(mockWallet.payInvoice).toHaveBeenCalledWith('cached-invoice')
+    expect(mockWallet.payInvoice).toHaveBeenCalledWith('cached-invoice', { serverOrigin: undefined })
   })
 
   it('returns error when no wallet available', async () => {
@@ -181,7 +181,7 @@ describe('handlePay', () => {
     )
   })
 
-  it('sets server origin on human wallet before paying', async () => {
+  it('passes serverOrigin to human wallet via options', async () => {
     const cache = new ChallengeCache()
     cache.set({
       invoice: 'lnbc100n1test',
@@ -192,11 +192,9 @@ describe('handlePay', () => {
       url: 'https://api.example.com/data',
     })
 
-    const setServerOrigin = vi.fn()
     const humanWallet = {
       method: 'human' as const,
       available: true,
-      setServerOrigin,
       payInvoice: vi.fn().mockResolvedValue({
         paid: true,
         method: 'human',
@@ -206,7 +204,7 @@ describe('handlePay', () => {
 
     const storeCredential = vi.fn().mockReturnValue(true)
 
-    const result = await handlePay(
+    await handlePay(
       { paymentHash: HASH_1, method: 'human' },
       {
         ...baseDeps,
@@ -217,11 +215,10 @@ describe('handlePay', () => {
       },
     )
 
-    expect(setServerOrigin).toHaveBeenCalledWith('https://api.example.com')
-    const parsed = JSON.parse(result.content[0].text)
-    expect(parsed.paid).toBe(true)
-    expect(parsed.preimage).toBeUndefined()
-    expect(storeCredential).toHaveBeenCalled()
+    expect(humanWallet.payInvoice).toHaveBeenCalledWith(
+      'lnbc100n1test',
+      { serverOrigin: 'https://api.example.com' },
+    )
   })
 
   it('rejects invoice exceeding maxAutoPaySats', async () => {

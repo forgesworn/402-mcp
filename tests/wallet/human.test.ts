@@ -1,5 +1,10 @@
-import { describe, it, expect } from 'vitest'
-import { pollForSettlement } from '../../src/wallet/human.js'
+import { describe, it, expect, vi } from 'vitest'
+import { createHumanWallet, pollForSettlement } from '../../src/wallet/human.js'
+
+// Mock decodeBolt11 — the real one can't decode test invoice strings
+vi.mock('../../src/l402/bolt11.js', () => ({
+  decodeBolt11: () => ({ paymentHash: 'a'.repeat(64), costSats: 100, expiry: 3600 }),
+}))
 
 describe('pollForSettlement with exponential backoff', () => {
   it('returns success when settlement found on third poll', async () => {
@@ -39,5 +44,40 @@ describe('pollForSettlement with exponential backoff', () => {
     })
     expect(result.paid).toBe(false)
     expect(result.reason).toContain('timed out')
+  })
+})
+
+describe('createHumanWallet', () => {
+  it('uses serverOrigin from options for settlement polling', async () => {
+    const wallet = createHumanWallet({
+      initialIntervalS: 0.01,
+      maxIntervalS: 0.1,
+      timeoutS: 5,
+      fetchFn: vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ settled: true, preimage: 'a'.repeat(64) }),
+      }) as unknown as typeof fetch,
+    })
+
+    const result = await wallet.payInvoice('lnbc100n1test', {
+      serverOrigin: 'https://api.example.com',
+    })
+
+    expect(result.paid).toBe(true)
+    expect(result.preimage).toBe('a'.repeat(64))
+  })
+
+  it('returns error when serverOrigin not provided', async () => {
+    const wallet = createHumanWallet({
+      initialIntervalS: 0.01,
+      maxIntervalS: 0.1,
+      timeoutS: 5,
+      fetchFn: vi.fn() as unknown as typeof fetch,
+    })
+
+    const result = await wallet.payInvoice('lnbc100n1test')
+
+    expect(result.paid).toBe(false)
+    expect(result.reason).toContain('server origin')
   })
 })

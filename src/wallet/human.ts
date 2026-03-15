@@ -1,4 +1,4 @@
-import type { WalletProvider, PaymentResult } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 
 export interface PollOptions {
@@ -34,25 +34,17 @@ export interface HumanWalletOptions {
   initialIntervalS: number
   maxIntervalS: number
   timeoutS: number
-  generateQr: (data: string) => Promise<string>
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
 }
 
-/** Creates a human-in-the-loop wallet that presents QR codes and polls for settlement. */
-export function createHumanWallet(options: HumanWalletOptions): WalletProvider & { setServerOrigin(origin: string): void } {
-  let serverOrigin = ''
-
+/** Creates a human-in-the-loop wallet that polls for settlement. */
+export function createHumanWallet(options: HumanWalletOptions): WalletProvider {
   return {
     method: 'human',
     available: true,
 
-    setServerOrigin(origin: string) {
-      serverOrigin = origin
-    },
-
-    async payInvoice(invoice: string): Promise<PaymentResult> {
-      const qrDataUri = await options.generateQr(invoice)
-      console.error(`\nScan to pay: ${qrDataUri}\n`)
+    async payInvoice(invoice: string, payOptions?: PayInvoiceOptions): Promise<PaymentResult> {
+      const origin = payOptions?.serverOrigin
 
       const { decodeBolt11 } = await import('../l402/bolt11.js')
       const decoded = decodeBolt11(invoice)
@@ -60,8 +52,8 @@ export function createHumanWallet(options: HumanWalletOptions): WalletProvider &
         return { paid: false, method: 'human', reason: 'Could not decode invoice payment hash' }
       }
 
-      if (!serverOrigin) {
-        return { paid: false, method: 'human', reason: 'No server origin set for settlement polling' }
+      if (!origin) {
+        return { paid: false, method: 'human', reason: 'No server origin for settlement polling' }
       }
 
       return pollForSettlement(decoded.paymentHash, {
@@ -70,7 +62,7 @@ export function createHumanWallet(options: HumanWalletOptions): WalletProvider &
         timeoutS: options.timeoutS,
         checkSettlement: async (hash: string) => {
           try {
-            const res = await options.fetchFn(`${serverOrigin}/invoice-status/${hash}`, undefined, { retries: 0 })
+            const res = await options.fetchFn(`${origin}/invoice-status/${hash}`, undefined, { retries: 0 })
             if (!res.ok) return { settled: false }
             const data = await res.json() as Record<string, unknown>
             const preimage = typeof data.preimage === 'string' && data.preimage.length > 0

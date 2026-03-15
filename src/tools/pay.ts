@@ -111,12 +111,8 @@ export async function handlePay(
   }
 
   try {
-    // Set server origin for human wallet polling
-    if (wallet.method === 'human' && cachedUrl && 'setServerOrigin' in wallet) {
-      (wallet as any).setServerOrigin(new URL(cachedUrl).origin)
-    }
-
-    const result = await wallet.payInvoice(invoice)
+    const origin = cachedUrl ? new URL(cachedUrl).origin : undefined
+    const result = await wallet.payInvoice(invoice, { serverOrigin: origin })
 
     // Roll back spend-limit reservation if payment failed
     if (!result.paid || !result.preimage) {
