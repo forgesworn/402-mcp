@@ -119,7 +119,7 @@ export async function handlePay(
     // If we have a payment page URL (toll-booth), poll it directly for settlement.
     // This avoids the human wallet's long timeout — the user already paid via the page.
     if (cachedPaymentUrl && wallet.method === 'human') {
-      const deadline = Date.now() + 30_000 // 30s timeout — user says they already paid
+      const deadline = Date.now() + 120_000 // 120s — enough time to open URL, pick a tier, and pay
       let intervalMs = 2000
 
       while (Date.now() < deadline) {
@@ -170,7 +170,7 @@ export async function handlePay(
           type: 'text' as const,
           text: JSON.stringify({
             paid: false,
-            reason: 'Payment not yet confirmed after 30s. If you have paid, try again in a moment.',
+            reason: 'Payment not yet confirmed after 120s. If you selected a different tier on the payment page, paste the L402 token here.',
             paymentUrl: cachedPaymentUrl,
           }),
         }],
