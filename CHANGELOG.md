@@ -1,3 +1,10 @@
+## [3.4.5](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.4...v3.4.5) (2026-03-15)
+
+
+### Bug Fixes
+
+* remove isError from QR responses and use low error correction ([f245fc1](https://github.com/TheCryptoDonkey/402-mcp/commit/f245fc12e049ad4fbd6a350145d7207987e25121))
+
 ## [3.4.4](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.3...v3.4.4) (2026-03-15)
 
 
