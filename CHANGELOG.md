@@ -1,3 +1,10 @@
+## [3.9.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.9.0...v3.9.1) (2026-03-15)
+
+
+### Bug Fixes
+
+* improve credits-exhausted message with actionable guidance ([06aa3bd](https://github.com/TheCryptoDonkey/402-mcp/commit/06aa3bdbd9a67bb5a69d3fd68960a5de80de11e2))
+
 # [3.9.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.8.1...v3.9.0) (2026-03-15)
 
 
