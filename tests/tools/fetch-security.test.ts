@@ -21,7 +21,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
     detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
     challengeCache: new ChallengeCache(),
-    generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+    generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
     walletMethod: () => undefined,
     ...overrides,
   }

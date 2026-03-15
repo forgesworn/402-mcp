@@ -61,10 +61,15 @@ if (cashuTokenStore) {
   walletProviders.push(createCashuWallet(cashuTokenStore))
 }
 
-// QR generation for human-in-the-loop
-async function generateQr(invoice: string): Promise<string> {
+// QR generation for human-in-the-loop (text for terminals, PNG for GUI clients)
+async function generateQr(invoice: string): Promise<{ png: string; text: string }> {
   const QRCode = await import('qrcode')
-  return QRCode.toDataURL(invoice.toUpperCase(), { type: 'image/png', margin: 2 })
+  const upper = invoice.toUpperCase()
+  const [png, text] = await Promise.all([
+    QRCode.toDataURL(upper, { type: 'image/png', margin: 2 }),
+    QRCode.toString(upper, { type: 'utf8', margin: 1 }),
+  ])
+  return { png, text }
 }
 
 walletProviders.push(createHumanWallet({

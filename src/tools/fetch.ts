@@ -31,7 +31,7 @@ export interface FetchDeps {
   decodeBolt11: (invoice: string) => DecodedInvoice
   detectServer: (headers: Headers, body: unknown) => ServerInfo
   challengeCache: ChallengeCache
-  generateQr: (invoice: string) => Promise<string>
+  generateQr: (invoice: string) => Promise<{ png: string; text: string }>
   walletMethod: () => WalletMethod | undefined
 }
 
@@ -137,6 +137,16 @@ export async function handleFetch(
           url: args.url,
         })
 
+        let qrText: string | undefined
+        let qrPngBase64: string | undefined
+        try {
+          const qr = await deps.generateQr(challenge.invoice)
+          qrText = qr.text
+          qrPngBase64 = qr.png.replace(/^data:image\/png;base64,/, '')
+        } catch {
+          // QR generation failed — text-only response still has the invoice
+        }
+
         const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
           type: 'text' as const,
           text: JSON.stringify({
@@ -144,20 +154,17 @@ export async function handleFetch(
             costSats: decoded.costSats,
             invoice: challenge.invoice,
             paymentHash: decoded.paymentHash,
+            qr: qrText,
             message: `Scan QR to pay ${decoded.costSats} sats. After payment, call l402_pay with paymentHash "${decoded.paymentHash}" to complete.`,
           }, null, 2),
         }]
 
-        try {
-          const qrDataUri = await deps.generateQr(challenge.invoice)
-          const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
+        if (qrPngBase64) {
           content.push({
             type: 'image' as const,
-            data: base64,
+            data: qrPngBase64,
             mimeType: 'image/png',
           })
-        } catch {
-          // QR generation failed — text-only response still has the invoice
         }
 
         return { content, isError: true as const }

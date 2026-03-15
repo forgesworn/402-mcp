@@ -19,7 +19,7 @@ export interface BuyCreditsDeps {
   decodeBolt11: (invoice: string) => DecodedInvoice
   maxSpendPerMinuteSats: number
   spendTracker: SpendTracker
-  generateQr: (invoice: string) => Promise<string>
+  generateQr: (invoice: string) => Promise<{ png: string; text: string }>
   walletMethod: () => WalletMethod | undefined
 }
 
@@ -149,6 +149,16 @@ export async function handleBuyCredits(
 
     // Human wallet timed out — return QR so user can pay manually
     if (payResult.method === 'human') {
+      let qrText: string | undefined
+      let qrPngBase64: string | undefined
+      try {
+        const qr = await deps.generateQr(invoice)
+        qrText = qr.text
+        qrPngBase64 = qr.png.replace(/^data:image\/png;base64,/, '')
+      } catch {
+        // QR generation failed — text response still has invoice
+      }
+
       const content: Array<{ type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }> = [{
         type: 'text' as const,
         text: JSON.stringify({
@@ -156,20 +166,17 @@ export async function handleBuyCredits(
           invoice,
           paymentHash: decoded.paymentHash,
           costSats: args.amountSats,
+          qr: qrText,
           message: `Scan QR to pay ${args.amountSats} sats. After payment, call l402_pay with the paymentHash.`,
         }, null, 2),
       }]
 
-      try {
-        const qrDataUri = await deps.generateQr(invoice)
-        const base64 = qrDataUri.replace(/^data:image\/png;base64,/, '')
+      if (qrPngBase64) {
         content.push({
           type: 'image' as const,
-          data: base64,
+          data: qrPngBase64,
           mimeType: 'image/png',
         })
-      } catch {
-        // QR generation failed — text response still has invoice
       }
 
       return { content, isError: true as const }

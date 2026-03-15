@@ -124,7 +124,7 @@ describe('L402 integration flow', () => {
         decodeBolt11,
         detectServer,
         challengeCache: new ChallengeCache(),
-        generateQr: async () => 'data:image/png;base64,test',
+        generateQr: async () => ({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -187,7 +187,7 @@ describe('L402 integration flow', () => {
         decodeBolt11,
         detectServer,
         challengeCache: new ChallengeCache(),
-        generateQr: async () => 'data:image/png;base64,test',
+        generateQr: async () => ({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -241,7 +241,7 @@ describe('L402 integration flow', () => {
       decodeBolt11,
       detectServer,
       challengeCache: new ChallengeCache(),
-      generateQr: async () => 'data:image/png;base64,test',
+      generateQr: async () => ({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
       walletMethod: () => undefined,
     }
 

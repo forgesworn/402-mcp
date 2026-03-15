@@ -21,7 +21,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
     detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
     challengeCache: new ChallengeCache(),
-    generateQr: vi.fn().mockResolvedValue('data:image/png;base64,iVBORtestdata'),
+    generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,iVBORtestdata', text: '█▀▀▀█\n█   █\n█▄▄▄█' }),
     walletMethod: () => undefined,
     ...overrides,
   }
@@ -178,7 +178,7 @@ describe('handleFetch', () => {
       parseL402: vi.fn().mockReturnValue({ macaroon: 'mac2', invoice: 'lnbc10n1new' }),
       decodeBolt11: vi.fn().mockReturnValue({ costSats: 10, paymentHash: 'b'.repeat(64), expiry: 3600 }),
       walletMethod: () => 'human',
-      generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+      generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,QRDATA', text: '█▀▀█' }),
     })
 
     const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
@@ -315,7 +315,7 @@ describe('handleFetch', () => {
       decodeBolt11: vi.fn().mockReturnValue({ costSats: 21, paymentHash: 'a'.repeat(64), expiry: 3600 }),
       payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human' }),
       walletMethod: () => 'human',
-      generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+      generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,QRDATA', text: '█▀▀█' }),
     })
 
     const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)

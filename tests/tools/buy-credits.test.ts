@@ -27,7 +27,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -53,7 +53,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -87,7 +87,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -117,7 +117,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -144,7 +144,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn(),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -180,7 +180,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -197,7 +197,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -230,7 +230,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'abc123', expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -261,7 +261,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 99999, paymentHash: 'hash1', expiry: 3600 }),
         maxSpendPerMinuteSats: 100000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -292,7 +292,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -324,7 +324,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,test'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
         walletMethod: () => undefined,
       },
     )
@@ -354,7 +354,7 @@ describe('handleBuyCredits', () => {
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'a'.repeat(64), expiry: 3600 }),
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
-        generateQr: vi.fn().mockResolvedValue('data:image/png;base64,QRDATA'),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,QRDATA', text: '█▀▀█' }),
         walletMethod: () => 'human',
       },
     )
