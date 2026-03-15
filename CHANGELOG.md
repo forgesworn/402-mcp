@@ -1,3 +1,10 @@
+## [3.4.4](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.3...v3.4.4) (2026-03-15)
+
+
+### Bug Fixes
+
+* use terminal QR type with ANSI colours for scannable output ([8a661ae](https://github.com/TheCryptoDonkey/402-mcp/commit/8a661ae898a1e2b0838c7c16199a9e34866a380e))
+
 ## [3.4.3](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.4.2...v3.4.3) (2026-03-15)
 
 

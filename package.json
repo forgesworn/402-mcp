@@ -1,6 +1,6 @@
 {
   "name": "402-mcp",
-  "version": "3.4.3",
+  "version": "3.4.4",
   "description": "L402 + x402 client MCP - AI agents discover, pay for, and consume any payment-gated API",
   "type": "module",
   "bin": {
