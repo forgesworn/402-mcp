@@ -1,5 +1,6 @@
 import type { NostrEvent } from 'nostr-tools/core'
 import type { SearchDeps } from './search.js'
+import { validateUrl } from '../fetch/ssrf-guard.js'
 
 /**
  * Creates a Nostr relay subscriber that connects to relays,
@@ -14,20 +15,30 @@ export interface SubscribeFilters {
   '#pmi'?: string[]
 }
 
-export function createNostrSubscriber(): SearchDeps['subscribeEvents'] {
+export function createNostrSubscriber(ssrfAllowPrivate = false): SearchDeps['subscribeEvents'] {
   return async (relays: string[], kinds: number[], timeout: number, filters?: SubscribeFilters): Promise<NostrEvent[]> => {
     const { Relay } = await import('nostr-tools/relay')
     const { verifyEvent } = await import('nostr-tools/pure')
     const events: NostrEvent[] = []
     const connections: Array<{ close(): void }> = []
 
-    const settled = await Promise.allSettled(
+    await Promise.allSettled(
       relays.map(async (url) => {
         if (!url.startsWith('wss://') && !url.startsWith('ws://')) {
           return
         }
         if (url.startsWith('ws://')) {
           console.error(`[402-mcp] Warning: connecting to unencrypted relay ${url} — subscription data may be visible to network observers. Use wss:// for production.`)
+        }
+
+        // SSRF check: validate relay hostname against blocked IPs before connecting.
+        // Convert ws(s):// to http(s):// for validation since validateUrl expects HTTP.
+        try {
+          const httpUrl = url.replace(/^ws/, 'http')
+          await validateUrl(httpUrl, ssrfAllowPrivate)
+        } catch {
+          console.error(`[402-mcp] SSRF: blocked relay connection to ${url}`)
+          return
         }
 
         try {

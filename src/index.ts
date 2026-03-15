@@ -188,7 +188,7 @@ registerRedeemCashuTool(server, {
   removeToken: (tokenStr) => cashuTokenStore?.remove(tokenStr),
 })
 
-registerSearchTool(server, { subscribeEvents: createNostrSubscriber() })
+registerSearchTool(server, { subscribeEvents: createNostrSubscriber(config.ssrfAllowPrivate) })
 
 // Start transport
 if (config.transport === 'http') {

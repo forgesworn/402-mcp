@@ -246,6 +246,20 @@ describe('validateUrl', () => {
     })
   })
 
+  describe('IPv6 zone/scope ID stripping', () => {
+    it('strips zone ID from IPv6 hostname before DNS lookup', async () => {
+      mockResolve('fe80::1', 6)
+      // URL with percent-encoded zone ID (fe80::1%25eth0)
+      await expect(validateUrl('http://[fe80::1%25eth0]/')).rejects.toThrow(SsrfError)
+    })
+
+    it('blocks link-local IPv6 with zone ID that would bypass without stripping', async () => {
+      // fe80::1 is link-local — must be blocked even if zone ID is present
+      mockResolve('fe80::1', 6)
+      await expect(validateUrl('http://[fe80::1]/')).rejects.toThrow(SsrfError)
+    })
+  })
+
   describe('bypass', () => {
     it('returns undefined when allowPrivate is true (no DNS resolution)', async () => {
       const result = await validateUrl('http://localhost', true)

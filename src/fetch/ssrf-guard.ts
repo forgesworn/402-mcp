@@ -99,7 +99,9 @@ export async function validateUrl(url: string, allowPrivate = false): Promise<Re
     throw new SsrfError(`non-HTTP scheme: ${parsed.protocol}`, url)
   }
 
-  const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '')
+  // Strip bracket notation and IPv6 zone/scope IDs (e.g. fe80::1%25eth0)
+  // so the guard is self-contained rather than relying on upstream normalisation.
+  const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').split('%')[0]
 
   // Resolve ALL addresses to prevent multi-homed bypass where one A/AAAA
   // record is public but another resolves to a private/blocked IP.
