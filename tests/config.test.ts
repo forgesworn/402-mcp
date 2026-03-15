@@ -161,11 +161,11 @@ describe('config validation', () => {
     warnSpy.mockRestore()
   })
 
-  it('throws when NODE_TLS_REJECT_UNAUTHORIZED=0 without SSRF_ALLOW_PRIVATE', async () => {
+  it('throws when NODE_TLS_REJECT_UNAUTHORIZED=0 without opt-in', async () => {
     vi.stubEnv('NODE_TLS_REJECT_UNAUTHORIZED', '0')
     const { loadConfig } = await import('../src/config.js')
     expect(() => loadConfig()).toThrow('NODE_TLS_REJECT_UNAUTHORIZED')
-    expect(() => loadConfig()).toThrow('SSRF_ALLOW_PRIVATE')
+    expect(() => loadConfig()).toThrow('ALLOW_INSECURE_TLS')
   })
 
   it('warns but allows NODE_TLS_REJECT_UNAUTHORIZED=0 with SSRF_ALLOW_PRIVATE=true', async () => {
@@ -174,6 +174,19 @@ describe('config validation', () => {
     const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { loadConfig } = await import('../src/config.js')
     loadConfig()
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('TLS certificate validation is disabled'),
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('warns but allows NODE_TLS_REJECT_UNAUTHORIZED=0 with ALLOW_INSECURE_TLS=true', async () => {
+    vi.stubEnv('NODE_TLS_REJECT_UNAUTHORIZED', '0')
+    vi.stubEnv('ALLOW_INSECURE_TLS', 'true')
+    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { loadConfig } = await import('../src/config.js')
+    const config = loadConfig()
+    expect(config.ssrfAllowPrivate).toBe(false) // TLS opt-in should NOT widen SSRF surface
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('TLS certificate validation is disabled'),
     )
