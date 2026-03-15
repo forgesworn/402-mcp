@@ -183,10 +183,11 @@ describe('handleFetch', () => {
 
     const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
 
-    // Should return QR image for human to pay
-    expect(result.content).toHaveLength(2)
+    // Should return JSON + QR text + QR image for human to pay
+    expect(result.content).toHaveLength(3)
     expect(result.content[0].type).toBe('text')
-    expect(result.content[1].type).toBe('image')
+    expect(result.content[1].type).toBe('text')
+    expect(result.content[2].type).toBe('image')
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.status).toBe(402)
@@ -320,10 +321,11 @@ describe('handleFetch', () => {
 
     const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
 
-    // Should have text + image content blocks
-    expect(result.content).toHaveLength(2)
+    // Should have JSON text + QR text + PNG image content blocks
+    expect(result.content).toHaveLength(3)
     expect(result.content[0].type).toBe('text')
-    expect(result.content[1].type).toBe('image')
+    expect(result.content[1].type).toBe('text')
+    expect(result.content[2].type).toBe('image')
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.status).toBe(402)
@@ -333,8 +335,11 @@ describe('handleFetch', () => {
     expect(parsed.message).toContain('Scan QR')
     expect(parsed.message).toContain('l402_pay')
 
+    // QR text block should contain the UTF-8 QR
+    expect(result.content[1].text).toBe('█▀▀█')
+
     // Image should be raw base64 (no data URI prefix)
-    const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
+    const img = result.content[2] as { type: 'image'; data: string; mimeType: string }
     expect(img.data).toBe('QRDATA')
     expect(img.mimeType).toBe('image/png')
 

@@ -166,10 +166,17 @@ export async function handleBuyCredits(
           invoice,
           paymentHash: decoded.paymentHash,
           costSats: args.amountSats,
-          qr: qrText,
           message: `Scan QR to pay ${args.amountSats} sats. After payment, call l402_pay with the paymentHash.`,
         }, null, 2),
       }]
+
+      // QR as separate text block so newlines render correctly in terminals
+      if (qrText) {
+        content.push({
+          type: 'text' as const,
+          text: qrText,
+        })
+      }
 
       if (qrPngBase64) {
         content.push({

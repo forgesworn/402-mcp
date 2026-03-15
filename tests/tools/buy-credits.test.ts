@@ -359,15 +359,19 @@ describe('handleBuyCredits', () => {
       },
     )
 
-    expect(result.content).toHaveLength(2)
+    expect(result.content).toHaveLength(3)
     expect(result.content[0].type).toBe('text')
-    expect(result.content[1].type).toBe('image')
+    expect(result.content[1].type).toBe('text')
+    expect(result.content[2].type).toBe('image')
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.paid).toBe(false)
     expect(parsed.invoice).toBe('lnbc5000n1test')
 
-    const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
+    // QR text block
+    expect(result.content[1].text).toBe('█▀▀█')
+
+    const img = result.content[2] as { type: 'image'; data: string; mimeType: string }
     expect(img.data).toBe('QRDATA')
   })
 })

@@ -154,10 +154,17 @@ export async function handleFetch(
             costSats: decoded.costSats,
             invoice: challenge.invoice,
             paymentHash: decoded.paymentHash,
-            qr: qrText,
             message: `Scan QR to pay ${decoded.costSats} sats. After payment, call l402_pay with paymentHash "${decoded.paymentHash}" to complete.`,
           }, null, 2),
         }]
+
+        // QR as separate text block so newlines render correctly in terminals
+        if (qrText) {
+          content.push({
+            type: 'text' as const,
+            text: qrText,
+          })
+        }
 
         if (qrPngBase64) {
           content.push({
