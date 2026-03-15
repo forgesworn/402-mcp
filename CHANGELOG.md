@@ -1,3 +1,10 @@
+# [3.8.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.7.0...v3.8.0) (2026-03-15)
+
+
+### Features
+
+* add l402_store_token tool for pasting payment page tokens ([1b792c5](https://github.com/TheCryptoDonkey/402-mcp/commit/1b792c5820aa63c86db5e7284885ac3e2f3f7e90))
+
 # [3.7.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.6.0...v3.7.0) (2026-03-15)
 
 
