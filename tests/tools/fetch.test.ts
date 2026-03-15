@@ -93,7 +93,7 @@ describe('handleFetch', () => {
       parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc50n1test' }),
       decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
       detectServer: vi.fn().mockReturnValue({ type: 'generic' }),
-      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'abcdef1234567890', method: 'nwc' }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }),
       maxAutoPaySats: 100,
     })
 
@@ -106,7 +106,7 @@ describe('handleFetch', () => {
     expect(parsed.creditsRemaining).toBe(950)
     expect(deps.credentialStore.set).toHaveBeenCalledWith('https://api.example.com', expect.objectContaining({
       macaroon: 'mac1',
-      preimage: 'abcdef1234567890',
+      preimage: 'a'.repeat(64),
     }))
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })

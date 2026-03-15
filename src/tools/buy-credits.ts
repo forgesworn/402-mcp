@@ -171,7 +171,7 @@ export function registerBuyCreditsTool(server: McpServer, deps: BuyCreditsDeps):
       description: 'Buy credits from a toll-booth server with volume discounts. Omit amountSats to discover available tiers. Provide amountSats to purchase a specific tier. Only works with toll-booth servers.',
       inputSchema: {
         url: z.url().describe('The toll-booth server URL'),
-        amountSats: z.number().positive().optional().describe('Amount in sats to purchase. Omit to list available tiers.'),
+        amountSats: z.number().int().positive().optional().describe('Amount in sats to purchase. Omit to list available tiers.'),
         method: z.enum(['nwc', 'cashu', 'human']).optional().describe('Payment method override'),
       },
     },

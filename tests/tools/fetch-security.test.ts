@@ -171,6 +171,27 @@ describe('handleFetch security', () => {
     expect(tryRecordSpy).not.toHaveBeenCalled()
   })
 
+  it('rejects preimage with wrong length (not 64 hex chars)', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+      }, '{}'))
+
+    const deps = makeDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+      // Valid hex but only 16 chars instead of 64
+      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'abcdef1234567890', method: 'nwc' }),
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+    expect(result.isError).toBe(true)
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.error).toContain('invalid characters')
+    expect(deps.credentialStore.set).not.toHaveBeenCalled()
+  })
+
   it('overwrites user Authorization when L402 credentials exist', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200))
     const deps = makeDeps({

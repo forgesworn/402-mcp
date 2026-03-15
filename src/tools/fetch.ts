@@ -125,7 +125,7 @@ export async function handleFetch(
       if (payResult.paid && payResult.preimage) {
         // Validate preimage (hex) and macaroon (base64-safe) before storage
         // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
-        if (!HEX_RE.test(payResult.preimage) || !MACAROON_RE.test(challenge.macaroon)) {
+        if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
           deps.spendTracker.unrecord(decoded.costSats!)
           return {
             content: [{
