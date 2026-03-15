@@ -186,6 +186,14 @@ registerRedeemCashuTool(server, {
   storeCredential: (origin, macaroon, preimage, paymentHash) =>
     storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
   removeToken: (tokenStr) => cashuTokenStore?.remove(tokenStr),
+  decodeToken: (token: string) => {
+    // Lazy-import cashu-ts to avoid top-level await; decode is synchronous
+    const { getDecodedToken } = require('@cashu/cashu-ts') as { getDecodedToken: (token: string) => { proofs: Array<{ amount: number }> } }
+    return getDecodedToken(token)
+  },
+  maxAutoPaySats: config.maxAutoPaySats,
+  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+  spendTracker,
 })
 
 registerSearchTool(server, { subscribeEvents: createNostrSubscriber(config.ssrfAllowPrivate) })

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
+import type { SpendTracker } from '../spend-tracker.js'
 import { safeErrorMessage } from './safe-error.js'
 
 const InvoiceResponse = z.object({
@@ -18,6 +19,10 @@ export interface RedeemCashuDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string) => boolean
   removeToken: (tokenStr: string) => void
+  decodeToken: (token: string) => { proofs: Array<{ amount: number }> }
+  maxAutoPaySats: number
+  maxSpendPerMinuteSats: number
+  spendTracker: SpendTracker
 }
 
 /** Redeems Cashu ecash tokens directly with a toll-booth server, bypassing the Lightning round-trip. */
@@ -26,6 +31,51 @@ export async function handleRedeemCashu(
   deps: RedeemCashuDeps,
 ) {
   const origin = new URL(args.url).origin
+
+  // Decode token to determine its value and enforce spend limits
+  let tokenSats: number
+  try {
+    const decoded = deps.decodeToken(args.token)
+    tokenSats = decoded.proofs.reduce((sum, p) => sum + p.amount, 0)
+  } catch {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: 'Failed to decode Cashu token' }),
+      }],
+      isError: true as const,
+    }
+  }
+
+  if (tokenSats <= 0) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: 'Cashu token has no value' }),
+      }],
+      isError: true as const,
+    }
+  }
+
+  if (tokenSats > deps.maxAutoPaySats) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: `Token value (${tokenSats} sats) exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}). Increase the limit or use a smaller token.` }),
+      }],
+      isError: true as const,
+    }
+  }
+
+  if (!deps.spendTracker.tryRecord(tokenSats, deps.maxSpendPerMinuteSats)) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({ error: 'Per-minute spend limit reached.' }),
+      }],
+      isError: true as const,
+    }
+  }
 
   try {
     // Step 1: Create invoice to get paymentHash and statusToken
@@ -36,6 +86,7 @@ export async function handleRedeemCashu(
     }, { retries: 0 })
 
     if (!invoiceResponse.ok) {
+      deps.spendTracker.unrecord(tokenSats)
       return {
         content: [{
           type: 'text' as const,
@@ -48,6 +99,7 @@ export async function handleRedeemCashu(
     const raw = await invoiceResponse.json()
     const invoiceValidated = InvoiceResponse.safeParse(raw)
     if (!invoiceValidated.success) {
+      deps.spendTracker.unrecord(tokenSats)
       return {
         content: [{
           type: 'text' as const,
@@ -73,6 +125,7 @@ export async function handleRedeemCashu(
     }, { retries: 0 })
 
     if (!redeemResponse.ok) {
+      deps.spendTracker.unrecord(tokenSats)
       return {
         content: [{
           type: 'text' as const,
@@ -85,6 +138,7 @@ export async function handleRedeemCashu(
     const redeemRaw = await redeemResponse.json()
     const redeemValidated = RedeemResponseSchema.safeParse(redeemRaw)
     if (!redeemValidated.success) {
+      deps.spendTracker.unrecord(tokenSats)
       return {
         content: [{
           type: 'text' as const,
@@ -114,6 +168,7 @@ export async function handleRedeemCashu(
       }],
     }
   } catch (err) {
+    deps.spendTracker.unrecord(tokenSats)
     return {
       content: [{
         type: 'text' as const,
