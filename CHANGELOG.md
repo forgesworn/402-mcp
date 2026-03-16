@@ -1,3 +1,10 @@
+# [3.10.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.9.1...v3.10.0) (2026-03-16)
+
+
+### Features
+
+* parse pricing, auth, and timeout from capability content ([bbaf0e0](https://github.com/TheCryptoDonkey/402-mcp/commit/bbaf0e0f379a9ac5bbcc2cfe116e4d1dac53b979))
+
 ## [3.9.1](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.9.0...v3.9.1) (2026-03-15)
 
 
