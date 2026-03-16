@@ -18,7 +18,7 @@ export interface SearchDeps {
 
 export interface ParsedService {
   name: string | undefined
-  url: string | undefined
+  urls: string[]
   about: string | undefined
   pubkey: string
   paymentMethods: string[]
@@ -27,7 +27,7 @@ export interface ParsedService {
   capabilities: { name: string; description: string; endpoint?: string; pricing?: string; auth?: string; timeout?: number }[]
 }
 
-/** Extracts service metadata (name, URL, pricing, capabilities) from a kind 31402 Nostr event. */
+/** Extracts service metadata (name, URLs, pricing, capabilities) from a kind 31402 Nostr event. */
 export function parseAnnounceEvent(event: NostrEvent): ParsedService {
   const getTag = (key: string): string | undefined =>
     event.tags.find(t => t[0] === key)?.[1]
@@ -35,8 +35,11 @@ export function parseAnnounceEvent(event: NostrEvent): ParsedService {
   const getAllTags = (key: string): string[][] =>
     event.tags.filter(t => t[0] === key)
 
-  const paymentMethods = getAllTags('pmi').map(t => t[1]).filter(Boolean)
-  const topics = getAllTags('t').map(t => t[1]).filter(Boolean)
+  const getAllTagValues = (key: string): string[] =>
+    event.tags.filter(t => t[0] === key).map(t => t[1]).filter(Boolean)
+
+  const paymentMethods = getAllTagValues('pmi')
+  const topics = getAllTagValues('t')
 
   const pricing = getAllTags('price').map(t => ({
     capability: t[1] ?? '',
@@ -69,7 +72,7 @@ export function parseAnnounceEvent(event: NostrEvent): ParsedService {
 
   return {
     name: getTag('name'),
-    url: getTag('url'),
+    urls: getAllTagValues('url'),
     about: getTag('about'),
     pubkey: event.pubkey,
     paymentMethods,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SsrfError } from '../../src/fetch/errors.js'
+import { SsrfError, TransportUnavailableError } from '../../src/fetch/errors.js'
 
 // Mock dns.promises.lookup to control resolved IPs
 // Now returns an array (dns.lookup with { all: true })
@@ -265,6 +265,81 @@ describe('validateUrl', () => {
       const result = await validateUrl('http://localhost', true)
       expect(result).toBeUndefined()
       expect(mockLookup).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('.onion handling', () => {
+    it('throws TransportUnavailableError for .onion URL when no Tor proxy', async () => {
+      await expect(
+        validateUrl('http://example.onion', false, { hasTorProxy: false }),
+      ).rejects.toThrow(TransportUnavailableError)
+      await expect(
+        validateUrl('http://example.onion', false, { hasTorProxy: false }),
+      ).rejects.toThrow('Transport unavailable')
+    })
+
+    it('returns undefined for .onion URL when Tor proxy is available (skip SSRF check)', async () => {
+      const result = await validateUrl('http://example.onion', false, { hasTorProxy: true })
+      expect(result).toBeUndefined()
+    })
+
+    it('never calls dns.lookup for .onion hostnames', async () => {
+      // Whether proxy is available or not, dns.lookup should never be called
+      await validateUrl('http://example.onion', false, { hasTorProxy: true }).catch(() => {})
+      await validateUrl('http://example.onion', false, { hasTorProxy: false }).catch(() => {})
+      expect(mockLookup).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('HNS fallback on NXDOMAIN', () => {
+    it('tries HNS resolver when DNS returns ENOTFOUND', async () => {
+      const nxError = Object.assign(new Error('getaddrinfo ENOTFOUND example.hns'), { code: 'ENOTFOUND' })
+      mockLookup.mockRejectedValueOnce(nxError)
+      const mockResolveHns = vi.fn().mockResolvedValue({ address: '93.184.216.34', family: 4 })
+
+      const result = await validateUrl('http://example.hns', false, { resolveHns: mockResolveHns })
+      expect(mockResolveHns).toHaveBeenCalledWith('example.hns')
+      expect(result).toEqual({ address: '93.184.216.34', family: 4 })
+    })
+
+    it('blocks HNS-resolved private IP through standard blocked-range check', async () => {
+      const nxError = Object.assign(new Error('getaddrinfo ENOTFOUND example.hns'), { code: 'ENOTFOUND' })
+      mockLookup.mockRejectedValueOnce(nxError)
+      const mockResolveHns = vi.fn().mockResolvedValue({ address: '10.0.0.1', family: 4 })
+
+      const promise = validateUrl('http://example.hns', false, { resolveHns: mockResolveHns })
+      await expect(promise).rejects.toThrow(SsrfError)
+      await expect(promise).rejects.toThrow('private IP')
+    })
+
+    it('throws TransportUnavailableError when both DNS and HNS fail', async () => {
+      const nxError = Object.assign(new Error('getaddrinfo ENOTFOUND example.hns'), { code: 'ENOTFOUND' })
+      mockLookup.mockRejectedValueOnce(nxError)
+      const mockResolveHns = vi.fn().mockRejectedValue(new Error('No DNS records found'))
+
+      await expect(
+        validateUrl('http://example.hns', false, { resolveHns: mockResolveHns }),
+      ).rejects.toThrow(TransportUnavailableError)
+    })
+
+    it('throws TransportUnavailableError when ENOTFOUND and no resolveHns provided', async () => {
+      const nxError = Object.assign(new Error('getaddrinfo ENOTFOUND example.hns'), { code: 'ENOTFOUND' })
+      mockLookup.mockRejectedValueOnce(nxError)
+
+      await expect(
+        validateUrl('http://example.hns', false, {}),
+      ).rejects.toThrow(TransportUnavailableError)
+    })
+
+    it('propagates non-NXDOMAIN DNS errors without trying HNS', async () => {
+      const transientError = Object.assign(new Error('getaddrinfo EAI_AGAIN example.hns'), { code: 'EAI_AGAIN' })
+      mockLookup.mockRejectedValueOnce(transientError)
+      const mockResolveHns = vi.fn().mockResolvedValue({ address: '1.2.3.4', family: 4 })
+
+      await expect(
+        validateUrl('http://example.hns', false, { resolveHns: mockResolveHns }),
+      ).rejects.toThrow('EAI_AGAIN')
+      expect(mockResolveHns).not.toHaveBeenCalled()
     })
   })
 })

@@ -39,3 +39,13 @@ export class DowngradeError extends Error {
     super(`HTTPS downgrade blocked: ${originalUrl} redirected to ${redirectUrl}`)
   }
 }
+
+export class TransportUnavailableError extends Error {
+  override readonly name = 'TransportUnavailableError'
+  readonly url: string
+
+  constructor(url: string, cause?: string) {
+    super(`Transport unavailable for ${url}${cause ? `: ${cause}` : ''}`)
+    this.url = url
+  }
+}

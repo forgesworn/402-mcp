@@ -25,7 +25,9 @@ import { registerBuyCreditsTool } from './tools/buy-credits.js'
 import { registerRedeemCashuTool } from './tools/redeem-cashu.js'
 import { registerSearchTool } from './tools/search.js'
 import { createNostrSubscriber } from './tools/nostr-subscribe.js'
-import { createResilientFetch } from './fetch/resilient-fetch.js'
+import { createResilientFetch, withTransportFallback } from './fetch/resilient-fetch.js'
+import { selectTransports } from './fetch/transport.js'
+import { resolveHns as resolveHnsBase } from './fetch/hns-resolve.js'
 import { SpendTracker } from './spend-tracker.js'
 
 const require = createRequire(import.meta.url)
@@ -33,11 +35,16 @@ const { version } = require('../package.json') as { version: string }
 
 const config = loadConfig()
 
+// Bind the HNS resolver with the configured gateway URL
+const resolveHns = (hostname: string) => resolveHnsBase(hostname, config.hnsGatewayUrl)
+
 const resilientFetch = createResilientFetch(fetch, {
   timeoutMs: config.fetchTimeoutMs,
   retries: config.fetchMaxRetries,
   maxResponseBytes: config.fetchMaxResponseBytes,
   ssrfAllowPrivate: config.ssrfAllowPrivate,
+  resolveHns,
+  hasTorProxy: !!config.torProxy,
 })
 
 // Shared state
@@ -157,6 +164,12 @@ registerDiscoverTool(server, {
 registerFetchTool(server, {
   credentialStore,
   fetchFn: resilientFetch,
+  transportFetch: (urls, init) =>
+    withTransportFallback(
+      selectTransports(urls, config.transportPreference, { hasTorProxy: !!config.torProxy }),
+      init,
+      resilientFetch,
+    ),
   payInvoice,
   maxAutoPaySats: config.maxAutoPaySats,
   maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,

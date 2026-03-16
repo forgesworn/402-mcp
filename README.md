@@ -43,6 +43,20 @@ Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) 
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
+| `TRANSPORT_PREFERENCE` | `clearnet` | Preferred network transport: `clearnet`, `tor`, or `hns` |
+| `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses (e.g. `socks5h://127.0.0.1:9050`) |
+| `SOCKS_PROXY` | - | Generic SOCKS5 proxy for all requests when set |
+| `HNS_GATEWAY_URL` | - | HTTP gateway for Handshake (`.hns`) domains (e.g. `https://hns.to`) |
+
+### Transport selection and fallback
+
+When a kind 31402 event advertises multiple URLs (one per transport), 402-mcp selects the best one based on your configuration:
+
+1. **Preference first** — if `TRANSPORT_PREFERENCE=tor` and a `.onion` URL is available, it is tried first.
+2. **Availability fallback** — if the preferred transport is unreachable (proxy not configured, timeout), the client falls back to the next URL in the list.
+3. **Clearnet default** — if no preference is set, clearnet URLs are tried before `.onion` or HNS entries.
+
+Services can announce multiple endpoints for the **same service** (same pricing, same macaroon key) on different transports. This is purely for censorship resistance; you do not need to re-authenticate when switching transports. To reach Tor or HNS endpoints you must configure the corresponding proxy/gateway env vars above.
 
 ## Tools
 

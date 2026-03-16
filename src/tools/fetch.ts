@@ -23,6 +23,8 @@ const BLOCKED_HEADERS = new Set([
 export interface FetchDeps {
   credentialStore: CredentialStore
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
+  /** Fetch with transport selection and fallback. Called with multiple URLs (from search results). */
+  transportFetch: (urls: string[], init: RequestInit) => Promise<Response>
   payInvoice: (invoice: string, options?: { serverOrigin?: string }) => Promise<{ paid: boolean; preimage?: string; method: string }>
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
@@ -43,11 +45,18 @@ function parseBalance(value: string | null): number | null {
 
 /** Makes an HTTP request with automatic L402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
-  args: { url: string; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean },
+  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string },
   deps: FetchDeps,
 ) {
-  const origin = new URL(args.url).origin
-  const cred = deps.credentialStore.get(origin)
+  // When multiple URLs are provided (from l402_search results), use transport fallback.
+  // The first URL in `urls` is also the primary URL for identity, origin, and payment.
+  const primaryUrl = args.urls?.length ? args.urls[0] : args.url
+  const origin = new URL(primaryUrl).origin
+  // When a pubkey is provided (from search results) use it as the credential key so
+  // credentials are shared across all transport URLs for the same service.
+  // For direct URL calls without a pubkey, fall back to origin-based keying.
+  const credKey = args.pubkey ?? origin
+  const cred = deps.credentialStore.get(credKey)
   const reqHeaders: Record<string, string> = {}
   // Copy user headers, stripping dangerous hop-by-hop/security-sensitive ones
   if (args.headers) {
@@ -61,11 +70,20 @@ export async function handleFetch(
   // Step 1-2: Use stored credentials if available
   if (cred) {
     reqHeaders['Authorization'] = `L402 ${cred.macaroon}:${cred.preimage}`
-    deps.credentialStore.updateLastUsed(origin)
+    deps.credentialStore.updateLastUsed(credKey)
+  }
+
+  // Build a unified fetch helper: multi-URL (transport fallback) or single-URL
+  const doFetch = (url: string, init: RequestInit) => {
+    const allUrls = args.urls?.length ? args.urls : [url]
+    if (allUrls.length > 1) {
+      return deps.transportFetch(allUrls, init)
+    }
+    return deps.fetchFn(url, init)
   }
 
   try {
-    const response = await deps.fetchFn(args.url, {
+    const response = await doFetch(primaryUrl, {
       method: args.method ?? 'GET',
       headers: reqHeaders,
       body: args.body,
@@ -75,7 +93,7 @@ export async function handleFetch(
     if (response.status !== 402) {
       const balance = parseBalance(response.headers.get('x-credit-balance'))
       if (balance !== null) {
-        deps.credentialStore.updateBalance(origin, balance)
+        deps.credentialStore.updateBalance(credKey, balance)
       }
 
       const body = await response.text()
@@ -113,7 +131,7 @@ export async function handleFetch(
 
     // Delete stale credential so next request doesn't send it again
     if (creditsExhausted) {
-      deps.credentialStore.delete(origin)
+      deps.credentialStore.delete(credKey)
     }
 
     // Step 4: Auto-pay if within budget
@@ -221,7 +239,7 @@ export async function handleFetch(
         }
 
         // Store credential and retry
-        deps.credentialStore.set(origin, {
+        deps.credentialStore.set(credKey, {
           macaroon: challenge.macaroon,
           preimage: payResult.preimage,
           paymentHash: decoded.paymentHash ?? '',
@@ -235,7 +253,7 @@ export async function handleFetch(
         const retryHeaders: Record<string, string> = { ...reqHeaders }
         retryHeaders['Authorization'] = `L402 ${challenge.macaroon}:${payResult.preimage}`
 
-        const retryResponse = await deps.fetchFn(args.url, {
+        const retryResponse = await doFetch(primaryUrl, {
           method: args.method ?? 'GET',
           headers: retryHeaders,
           body: args.body,
@@ -243,7 +261,7 @@ export async function handleFetch(
 
         const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
         if (retryBalance !== null) {
-          deps.credentialStore.updateBalance(origin, retryBalance)
+          deps.credentialStore.updateBalance(credKey, retryBalance)
         }
 
         const retryBody = await retryResponse.text()
@@ -304,11 +322,13 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
     {
       description: 'Fetch a URL with automatic payment handling. Use this to access any paid API or service. Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402_buy_credits to purchase their chosen tier.',
       inputSchema: {
-        url: z.url().describe('The URL to request'),
+        url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),
+        urls: z.array(z.url()).max(10).optional().describe('All transport URLs from l402_search results (clearnet, onion, HNS). When present, transports are tried in preference order with automatic fallback on connection failure.'),
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).optional().default('GET').describe('HTTP method'),
         headers: z.record(z.string().max(1000), z.string().max(8000)).optional().describe('Additional request headers'),
         body: z.string().max(1_000_000).optional().describe('Request body (for POST/PUT)'),
         autoPay: z.boolean().optional().default(false).describe('Automatically pay if within MAX_AUTO_PAY_SATS budget'),
+        pubkey: z.string().max(128).optional().describe('Service pubkey from l402_search results — used to share credentials across all transport URLs for the same service'),
       },
     },
     async (args) => handleFetch(args, deps),

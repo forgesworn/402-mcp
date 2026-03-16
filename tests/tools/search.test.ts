@@ -35,12 +35,12 @@ function mockDeps(events: NostrEvent[]): SearchDeps {
 }
 
 describe('parseAnnounceEvent', () => {
-  it('extracts name, url, about, pubkey, paymentMethods, pricing, and topics', () => {
+  it('extracts name, urls, about, pubkey, paymentMethods, pricing, and topics', () => {
     const event = makeEvent()
     const result = parseAnnounceEvent(event)
 
     expect(result.name).toBe('Alpha Service')
-    expect(result.url).toBe('https://alpha.example.com')
+    expect(result.urls).toEqual(['https://alpha.example.com'])
     expect(result.about).toBe('An AI chat service')
     expect(result.pubkey).toBe('abc123pubkey')
     expect(result.paymentMethods).toEqual(['bitcoin-lightning-bolt11', 'bitcoin-cashu'])
@@ -59,11 +59,44 @@ describe('parseAnnounceEvent', () => {
     const result = parseAnnounceEvent(event)
 
     expect(result.name).toBeUndefined()
-    expect(result.url).toBe('https://minimal.example.com')
+    expect(result.urls).toEqual(['https://minimal.example.com'])
     expect(result.about).toBeUndefined()
     expect(result.paymentMethods).toEqual([])
     expect(result.pricing).toEqual([])
     expect(result.topics).toEqual([])
+  })
+
+  it('collects multiple url tags into urls array', () => {
+    const event = makeEvent({
+      tags: [
+        ['d', 'multi-transport'],
+        ['name', 'Multi-Transport Service'],
+        ['url', 'https://clear.example.com'],
+        ['url', 'http://example.onion'],
+        ['url', 'https://hnsname'],
+      ],
+      content: '',
+    })
+    const result = parseAnnounceEvent(event)
+
+    expect(result.urls).toEqual([
+      'https://clear.example.com',
+      'http://example.onion',
+      'https://hnsname',
+    ])
+  })
+
+  it('returns empty urls array when no url tag is present', () => {
+    const event = makeEvent({
+      tags: [
+        ['d', 'no-url'],
+        ['name', 'No URL Service'],
+      ],
+      content: '',
+    })
+    const result = parseAnnounceEvent(event)
+
+    expect(result.urls).toEqual([])
   })
 
   it('parses capabilities from content JSON', () => {
@@ -173,7 +206,7 @@ describe('handleSearch', () => {
 
     expect(parsed).toHaveLength(1)
     expect(parsed[0].name).toBe('Alpha Service')
-    expect(parsed[0].url).toBe('https://alpha.example.com')
+    expect(parsed[0].urls).toEqual(['https://alpha.example.com'])
     expect(parsed[0].paymentMethods).toEqual(['bitcoin-lightning-bolt11', 'bitcoin-cashu'])
   })
 

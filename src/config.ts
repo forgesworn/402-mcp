@@ -17,6 +17,9 @@ export interface L402Config {
   ssrfAllowPrivate: boolean
   corsOrigin: string | false
   bindAddress: string
+  transportPreference: string[]
+  torProxy: string | undefined
+  hnsGatewayUrl: string
 }
 
 function assertNonNegativeInt(name: string, value: number): void {
@@ -51,6 +54,13 @@ export function loadConfig(): L402Config {
     throw new Error(`TRANSPORT must be 'stdio' or 'http'; got '${transport}'`)
   }
 
+  const transportPref = process.env.TRANSPORT_PREFERENCE
+  const transportPreference = transportPref
+    ? transportPref.split(',').map(s => s.trim()).filter(Boolean)
+    : ['onion', 'hns', 'https', 'http']
+  const torProxy = process.env.TOR_PROXY || process.env.SOCKS_PROXY || undefined
+  const hnsGatewayUrl = process.env.HNS_GATEWAY_URL || 'https://query.hdns.io/'
+
   const config: L402Config = {
     nwcUri,
     cashuTokensPath: process.env.CASHU_TOKENS,
@@ -67,6 +77,9 @@ export function loadConfig(): L402Config {
     ssrfAllowPrivate: process.env.SSRF_ALLOW_PRIVATE === 'true',
     corsOrigin: process.env.CORS_ORIGIN || false,
     bindAddress: process.env.BIND_ADDRESS ?? '127.0.0.1',
+    transportPreference,
+    torProxy,
+    hnsGatewayUrl,
   }
 
   assertNonNegativeInt('MAX_AUTO_PAY_SATS', config.maxAutoPaySats)

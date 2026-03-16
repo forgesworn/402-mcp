@@ -1,5 +1,9 @@
 import { promises as dns } from 'node:dns'
-import { SsrfError } from './errors.js'
+import { SsrfError, TransportUnavailableError } from './errors.js'
+import type { ResolvedAddress } from './hns-resolve.js'
+
+// Re-export ResolvedAddress so callers can import from ssrf-guard as before
+export type { ResolvedAddress }
 
 function isBlockedIp(address: string, family: number): string | null {
   if (family === 6) {
@@ -67,9 +71,22 @@ function isBlockedIp(address: string, family: number): string | null {
   return null
 }
 
-export interface ResolvedAddress {
-  address: string
-  family: number
+/**
+ * Validate a single resolved address against blocked ranges.
+ * Throws SsrfError if the address is in a blocked range.
+ */
+function assertNotBlocked(address: string, family: number, url: string): void {
+  const reason = isBlockedIp(address, family)
+  if (reason) {
+    throw new SsrfError(reason, url)
+  }
+}
+
+export interface ValidateUrlOptions {
+  /** Resolver for HNS (Handshake) names — called on NXDOMAIN (ENOTFOUND) */
+  resolveHns?: (hostname: string) => Promise<ResolvedAddress>
+  /** Whether a Tor SOCKS proxy is available — required for .onion URLs */
+  hasTorProxy?: boolean
 }
 
 /**
@@ -84,8 +101,22 @@ export interface ResolvedAddress {
  *
  * When `allowPrivate` is true, no resolution or validation is performed and
  * `undefined` is returned.
+ *
+ * `.onion` hostnames:
+ * - If `options.hasTorProxy` is true, returns `undefined` (route via SOCKS proxy; skip SSRF).
+ * - Otherwise throws `TransportUnavailableError`.
+ *
+ * HNS fallback:
+ * - If standard DNS fails with NXDOMAIN (ENOTFOUND) and `options.resolveHns` is provided,
+ *   it is tried as a fallback. The resolved IP still goes through blocked-range checks.
+ * - Non-NXDOMAIN DNS errors propagate unchanged.
+ * - If both DNS and HNS fail, throws `TransportUnavailableError`.
  */
-export async function validateUrl(url: string, allowPrivate = false): Promise<ResolvedAddress | undefined> {
+export async function validateUrl(
+  url: string,
+  allowPrivate = false,
+  options: ValidateUrlOptions = {},
+): Promise<ResolvedAddress | undefined> {
   if (allowPrivate) return undefined
 
   let parsed: URL
@@ -103,19 +134,46 @@ export async function validateUrl(url: string, allowPrivate = false): Promise<Re
   // so the guard is self-contained rather than relying on upstream normalisation.
   const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').split('%')[0]
 
+  // .onion: route via Tor SOCKS proxy — never attempt DNS resolution
+  if (hostname.endsWith('.onion')) {
+    if (options.hasTorProxy) return undefined
+    throw new TransportUnavailableError(url, 'Tor proxy required for .onion addresses')
+  }
+
   // Resolve ALL addresses to prevent multi-homed bypass where one A/AAAA
   // record is public but another resolves to a private/blocked IP.
-  const results = await dns.lookup(hostname, { all: true })
+  let results: Array<{ address: string; family: number }>
+  try {
+    results = await dns.lookup(hostname, { all: true })
+  } catch (err) {
+    const dnsError = err as NodeJS.ErrnoException
+    // NXDOMAIN — try HNS fallback
+    if (dnsError.code === 'ENOTFOUND') {
+      if (options.resolveHns) {
+        let hnsResult: ResolvedAddress
+        try {
+          hnsResult = await options.resolveHns(hostname)
+        } catch {
+          throw new TransportUnavailableError(url, 'DNS and HNS resolution both failed')
+        }
+        // Validate the HNS-resolved IP against blocked ranges
+        assertNotBlocked(hnsResult.address, hnsResult.family, url)
+        return hnsResult
+      }
+      throw new TransportUnavailableError(url, 'NXDOMAIN and no HNS resolver configured')
+    }
+    // Non-NXDOMAIN errors (EAI_AGAIN, ESERVFAIL, etc.) propagate unchanged
+    throw err
+  }
+
   if (results.length === 0) {
     throw new SsrfError('DNS resolution returned no addresses', url)
   }
   for (const { address: addr, family: fam } of results) {
-    const reason = isBlockedIp(addr, fam)
-    if (reason) {
-      throw new SsrfError(reason, url)
-    }
+    assertNotBlocked(addr, fam, url)
   }
 
   // Return the first result for IP pinning (all have been validated)
-  return { address: results[0].address, family: results[0].family }
+  // dns.lookup returns family as number (4 or 6); cast to the narrower union type
+  return { address: results[0].address, family: results[0].family as 4 | 6 }
 }

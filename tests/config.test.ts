@@ -192,4 +192,65 @@ describe('config validation', () => {
     )
     warnSpy.mockRestore()
   })
+
+  // Transport preference
+  it('defaults transportPreference to [onion, hns, https, http]', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().transportPreference).toEqual(['onion', 'hns', 'https', 'http'])
+  })
+
+  it('parses TRANSPORT_PREFERENCE env var into array', async () => {
+    vi.stubEnv('TRANSPORT_PREFERENCE', 'https,http')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().transportPreference).toEqual(['https', 'http'])
+  })
+
+  it('trims whitespace in TRANSPORT_PREFERENCE entries', async () => {
+    vi.stubEnv('TRANSPORT_PREFERENCE', ' https , http ')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().transportPreference).toEqual(['https', 'http'])
+  })
+
+  it('filters empty entries from TRANSPORT_PREFERENCE', async () => {
+    vi.stubEnv('TRANSPORT_PREFERENCE', 'https,,http,')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().transportPreference).toEqual(['https', 'http'])
+  })
+
+  // Tor proxy
+  it('defaults torProxy to undefined when neither TOR_PROXY nor SOCKS_PROXY is set', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().torProxy).toBeUndefined()
+  })
+
+  it('reads torProxy from TOR_PROXY env var', async () => {
+    vi.stubEnv('TOR_PROXY', 'socks5://127.0.0.1:9050')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9050')
+  })
+
+  it('falls back to SOCKS_PROXY when TOR_PROXY is not set', async () => {
+    vi.stubEnv('SOCKS_PROXY', 'socks5://127.0.0.1:9150')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9150')
+  })
+
+  it('prefers TOR_PROXY over SOCKS_PROXY when both are set', async () => {
+    vi.stubEnv('TOR_PROXY', 'socks5://127.0.0.1:9050')
+    vi.stubEnv('SOCKS_PROXY', 'socks5://127.0.0.1:9150')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9050')
+  })
+
+  // HNS gateway URL
+  it('defaults hnsGatewayUrl to https://query.hdns.io/', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().hnsGatewayUrl).toBe('https://query.hdns.io/')
+  })
+
+  it('reads hnsGatewayUrl from HNS_GATEWAY_URL env var', async () => {
+    vi.stubEnv('HNS_GATEWAY_URL', 'https://my-hns-gateway.example.com/')
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().hnsGatewayUrl).toBe('https://my-hns-gateway.example.com/')
+  })
 })
