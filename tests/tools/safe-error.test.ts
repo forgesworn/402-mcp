@@ -39,10 +39,18 @@ describe('safeErrorMessage', () => {
     expect(safeErrorMessage(err)).not.toContain('127.0.0.1')
   })
 
-  it('returns generic message for unknown Error', () => {
+  it('returns generic message for unknown Error without leaking name', () => {
     const err = new Error('some internal stack trace details')
-    expect(safeErrorMessage(err)).toBe('Request failed: Error')
+    expect(safeErrorMessage(err)).toBe('Request failed.')
     expect(safeErrorMessage(err)).not.toContain('stack trace')
+  })
+
+  it('does not leak custom error class names', () => {
+    class InternalDatabaseError extends Error { name = 'InternalDatabaseError at /var/db/prod' }
+    const err = new InternalDatabaseError('connection details')
+    expect(safeErrorMessage(err)).toBe('Request failed.')
+    expect(safeErrorMessage(err)).not.toContain('Database')
+    expect(safeErrorMessage(err)).not.toContain('/var/db')
   })
 
   it('returns generic message for non-Error values', () => {

@@ -17,6 +17,7 @@ export interface BuyCreditsDeps {
   payInvoice: (invoice: string, options?: { serverOrigin?: string; method?: WalletMethod }) => Promise<{ paid: boolean; preimage?: string; method: string }>
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string) => boolean
   decodeBolt11: (invoice: string) => DecodedInvoice
+  maxAutoPaySats: number
   maxSpendPerMinuteSats: number
   spendTracker: SpendTracker
   generateQr: (invoice: string) => Promise<{ png: string; text: string }>
@@ -104,6 +105,17 @@ export async function handleBuyCredits(
         content: [{
           type: 'text' as const,
           text: JSON.stringify({ error: `Invoice amount (${decoded.costSats} sats) does not match requested amount (${args.amountSats} sats). Refusing to pay.` }),
+        }],
+        isError: true as const,
+      }
+    }
+
+    // Per-request cap — consistent with l402_fetch and l402_redeem_cashu
+    if (decoded.costSats > deps.maxAutoPaySats) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({ error: `Amount ${decoded.costSats} sats exceeds per-request limit (${deps.maxAutoPaySats} sats). Reduce the amount or ask the user to confirm.` }),
         }],
         isError: true as const,
       }

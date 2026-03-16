@@ -52,7 +52,8 @@ export function parseAnnounceEvent(event: NostrEvent): ParsedService {
     const parsed: unknown = JSON.parse(event.content)
     const parsedObj = parsed as Record<string, unknown> | null
     if (parsedObj && Array.isArray(parsedObj.capabilities)) {
-      capabilities = (parsedObj.capabilities as unknown[])
+      // Cap at 100 to prevent CPU exhaustion from malicious events with huge arrays
+      capabilities = (parsedObj.capabilities as unknown[]).slice(0, 100)
         .filter((c: unknown): c is Record<string, unknown> =>
           typeof c === 'object' && c !== null &&
           typeof (c as Record<string, unknown>).name === 'string' &&

@@ -137,6 +137,65 @@ describe('resolveHns', () => {
     }, 3000)
   })
 
+  describe('IP format validation', () => {
+    it('rejects non-standard IPv4 from gateway (octal)', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '0177.0.0.1' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects hex IPv4 from gateway', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '0x7f.0.0.1' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects decimal integer IPv4 from gateway', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '2130706433' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects shorthand IPv4 from gateway', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '127.1' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects IPv4 with leading zeros', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '010.0.0.1' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects garbage strings in address field', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '../../../etc/passwd' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv4')
+    })
+
+    it('rejects invalid IPv6 from gateway', async () => {
+      // No A records, then AAAA with garbage
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 28, data: 'not-an-ipv6' }]))
+      await expect(resolveHns('evil.hns', 'https://query.hdns.io/')).rejects.toThrow('invalid IPv6')
+    })
+
+    it('accepts valid standard IPv4', async () => {
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 1, data: '93.184.216.34' }]))
+      const result = await resolveHns('good.hns', 'https://query.hdns.io/')
+      expect(result).toEqual({ address: '93.184.216.34', family: 4 })
+    })
+
+    it('accepts valid IPv6', async () => {
+      mockFetch.mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }))
+      mockFetch.mockResolvedValueOnce(dnsResponse([{ type: 28, data: '2606:2800:220:1:248:1893:25c8:1946' }]))
+      const result = await resolveHns('good.hns', 'https://query.hdns.io/')
+      expect(result).toEqual({ address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 })
+    })
+  })
+
+  describe('gateway redirect protection', () => {
+    it('rejects gateway redirect (redirect: error)', async () => {
+      mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'))
+      await expect(resolveHns('example.hns', 'https://evil-gateway.com/')).rejects.toThrow()
+    })
+  })
+
   describe('A record type filtering', () => {
     it('ignores non-A record entries in A record response (type 1 only)', async () => {
       mockFetch.mockResolvedValueOnce(

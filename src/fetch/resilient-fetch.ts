@@ -268,6 +268,16 @@ async function fetchWithTimeoutAndRedirects(
     // SSRF check on redirect target; capture the resolved address for pinning
     currentResolved = await validateUrl(currentUrl, allowPrivate, ssrfOptions)
 
+    // Strip Authorization header on cross-origin redirects to prevent credential leakage.
+    // Per Fetch spec, credentials should not follow cross-origin redirects.
+    const redirectOrigin = new URL(currentUrl).origin
+    const originalOrigin = new URL(originalUrl).origin
+    if (redirectOrigin !== originalOrigin && currentInit.headers) {
+      const headers = new Headers(currentInit.headers)
+      headers.delete('Authorization')
+      currentInit = { ...currentInit, headers }
+    }
+
     // 301/302/303 change POST to GET and drop body
     if ([301, 302, 303].includes(response.status)) {
       const method = currentInit.method?.toUpperCase()

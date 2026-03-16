@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
-import { readFileSync, writeFileSync, openSync, closeSync, mkdirSync, chmodSync, constants as fsConstants } from 'node:fs'
+import { readFileSync, writeFileSync, openSync, closeSync, mkdirSync, chmodSync, statSync, constants as fsConstants } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
@@ -73,7 +73,15 @@ function loadOrCreateFallbackKey(): Buffer {
     if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
   }
 
-  // File already exists — read and validate
+  // File already exists — verify permissions and read
+  try {
+    const st = statSync(FALLBACK_KEY_PATH)
+    const perms = st.mode & 0o777
+    if (perms !== 0o600) {
+      // Tighten permissions if they were widened (e.g. by another tool)
+      chmodSync(FALLBACK_KEY_PATH, 0o600)
+    }
+  } catch { /* stat/chmod may fail on some platforms — proceed with read */ }
   const hex = readFileSync(FALLBACK_KEY_PATH, 'utf8').trim()
   if (!/^[0-9a-f]{64}$/.test(hex)) {
     throw new Error(`Encryption key file is corrupted (expected 64 hex chars). Remove ${FALLBACK_KEY_PATH} to regenerate (existing credentials will be lost).`)

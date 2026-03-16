@@ -25,6 +25,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -51,6 +52,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -85,6 +87,7 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential,
         decodeBolt11,
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -115,6 +118,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -142,6 +146,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn(),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -178,6 +183,7 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential,
         decodeBolt11,
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -195,6 +201,7 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential,
         decodeBolt11,
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker,
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -228,6 +235,7 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'abc123', expiry: 3600 }),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -259,6 +267,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 99999, paymentHash: 'hash1', expiry: 3600 }),
+        maxAutoPaySats: 100000,
         maxSpendPerMinuteSats: 100000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -290,6 +299,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn(),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -322,6 +332,7 @@ describe('handleBuyCredits', () => {
         payInvoice,
         storeCredential: vi.fn().mockReturnValue(true),
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
@@ -332,6 +343,41 @@ describe('handleBuyCredits', () => {
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.paid).toBe(true)
     expect(payInvoice).toHaveBeenCalled()
+  })
+
+  it('rejects amount exceeding maxAutoPaySats', async () => {
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        bolt11: 'lnbc5000n1test',
+        macaroon: 'mac456',
+        credit_sats: 5500,
+      }),
+    })
+
+    const payInvoice = vi.fn()
+
+    const result = await handleBuyCredits(
+      { url: 'https://api.example.com/data', amountSats: 5000 },
+      {
+        fetchFn: mockFetch as unknown as typeof fetch,
+        payInvoice,
+        storeCredential: vi.fn(),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
+        maxAutoPaySats: 1000,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: new SpendTracker(),
+        generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,test', text: '█▀▀█' }),
+        walletMethod: () => undefined,
+      },
+    )
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(result.isError).toBe(true)
+    expect(parsed.error).toContain('per-request limit')
+    // Payment should never have been attempted
+    expect(payInvoice).not.toHaveBeenCalled()
   })
 
   it('returns QR image on human wallet timeout', async () => {
@@ -352,6 +398,7 @@ describe('handleBuyCredits', () => {
         payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'human', reason: 'timed out' }),
         storeCredential: vi.fn(),
         decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'a'.repeat(64), expiry: 3600 }),
+        maxAutoPaySats: 10000,
         maxSpendPerMinuteSats: 10000,
         spendTracker: new SpendTracker(),
         generateQr: vi.fn().mockResolvedValue({ png: 'data:image/png;base64,QRDATA', text: '█▀▀█' }),

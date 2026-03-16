@@ -16,8 +16,8 @@ export function safeErrorMessage(err: unknown): string {
   if (err instanceof Error) {
     const code = (err as NodeJS.ErrnoException).code
     if (code) return `Network error: ${code}`
-    // Generic fallback — class name only
-    return `Request failed: ${err.name}`
+    // Generic fallback — do not expose err.name as custom error classes may leak details
+    return 'Request failed.'
   }
 
   return 'An unexpected error occurred.'

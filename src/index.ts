@@ -205,6 +205,7 @@ registerBuyCreditsTool(server, {
   storeCredential: (origin, macaroon, preimage, paymentHash) =>
     storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
   decodeBolt11,
+  maxAutoPaySats: config.maxAutoPaySats,
   maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
   spendTracker,
   generateQr,
