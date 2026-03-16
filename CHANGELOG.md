@@ -1,3 +1,17 @@
+# [3.11.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.10.0...v3.11.0) (2026-03-16)
+
+
+### Features
+
+* add HNS resolver (DNS-over-HTTPS via HDNS gateway) ([12fea73](https://github.com/TheCryptoDonkey/402-mcp/commit/12fea732f61096ab7660ca2eeefde537b803738d))
+* add transport selector (preference sort, .onion filtering, HNS classification) ([494f128](https://github.com/TheCryptoDonkey/402-mcp/commit/494f128653394e9df3cdd906314dc528fe9cd0bd))
+* add transportPreference, torProxy, hnsGatewayUrl to L402Config ([908142d](https://github.com/TheCryptoDonkey/402-mcp/commit/908142da7262900deb34b51b588971506a866b08))
+* add withTransportFallback and isTransportError to resilient-fetch ([f4a567d](https://github.com/TheCryptoDonkey/402-mcp/commit/f4a567de92c508e666db4323aacae3b84c9740f0))
+* ParsedService.url → urls[] to support multi-transport kind 31402 events ([eb2a685](https://github.com/TheCryptoDonkey/402-mcp/commit/eb2a68574646cf1da71777ae3f8b0acee1e62ad6))
+* pubkey-based credential keying in l402_fetch ([858fc99](https://github.com/TheCryptoDonkey/402-mcp/commit/858fc99ce37405041508014888ebd496bb2699f3))
+* update SSRF guard — .onion detection, HNS fallback on NXDOMAIN ([de3e97e](https://github.com/TheCryptoDonkey/402-mcp/commit/de3e97e2963f74d27249257ceb1fc4cfdd194bb6))
+* wire multi-transport selection and HNS/Tor into l402_fetch ([1303afa](https://github.com/TheCryptoDonkey/402-mcp/commit/1303afa116cade33f8a57eae2fedfc564a6a0d0f))
+
 # [3.10.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.9.1...v3.10.0) (2026-03-16)
 
 
