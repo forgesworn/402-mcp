@@ -1,5 +1,5 @@
 import { validateUrl, type ResolvedAddress } from './ssrf-guard.js'
-import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError } from './errors.js'
+import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError, TransportUnavailableError } from './errors.js'
 
 export interface ResilientFetchOptions {
   timeoutMs?: number
@@ -265,4 +265,55 @@ async function fetchWithTimeoutAndRedirects(
     }
     // 307/308 preserve method and body (no change needed)
   }
+}
+
+/** Error codes that indicate a transport-level failure (connect refused, DNS, timeout). */
+const TRANSPORT_ERROR_CODES = new Set(['ECONNREFUSED', 'ETIMEDOUT', 'ENOTFOUND', 'UND_ERR_CONNECT_TIMEOUT'])
+
+/**
+ * Returns true when the error is a transport-level failure that should trigger
+ * a fallback to the next URL rather than surfacing to the caller.
+ *
+ * - `TransportUnavailableError` — thrown by ssrf-guard for .onion without Tor, etc.
+ * - Node error codes: ECONNREFUSED, ETIMEDOUT, ENOTFOUND, UND_ERR_CONNECT_TIMEOUT
+ * - ECONNRESET is intentionally excluded — a mid-response reset is not a transport
+ *   failure that can be resolved by trying a different URL.
+ */
+export function isTransportError(err: unknown): boolean {
+  if (err instanceof TransportUnavailableError) return true
+  if (err instanceof Error) {
+    const code = (err as NodeJS.ErrnoException).code
+    if (code && TRANSPORT_ERROR_CODES.has(code)) return true
+  }
+  return false
+}
+
+/**
+ * Try each URL in order, falling back on transport-level failures.
+ *
+ * - Connection failures (ECONNREFUSED, ETIMEDOUT, ENOTFOUND, UND_ERR_CONNECT_TIMEOUT,
+ *   TransportUnavailableError) are swallowed and the next URL is tried.
+ * - Any other error (HTTP-level, SSRF block, decode error) is re-thrown immediately
+ *   without trying the remaining URLs.
+ * - Throws the last transport error if all URLs are exhausted.
+ */
+export async function withTransportFallback(
+  urls: string[],
+  init: RequestInit,
+  fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>,
+  options?: ResilientFetchOptions,
+): Promise<Response> {
+  let lastError: Error | undefined
+  for (const url of urls) {
+    try {
+      return await fetchFn(url, init, options)
+    } catch (err) {
+      if (isTransportError(err)) {
+        lastError = err as Error
+        continue
+      }
+      throw err
+    }
+  }
+  throw lastError ?? new Error('All transports exhausted')
 }

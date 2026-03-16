@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError } from '../../src/fetch/errors.js'
+import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError, TransportUnavailableError } from '../../src/fetch/errors.js'
 
 // Mock the SSRF guard
 const mockValidateUrl = vi.fn()
@@ -7,7 +7,7 @@ vi.mock('../../src/fetch/ssrf-guard.js', () => ({
   validateUrl: (...args: unknown[]) => mockValidateUrl(...args),
 }))
 
-const { createResilientFetch } = await import('../../src/fetch/resilient-fetch.js')
+const { createResilientFetch, withTransportFallback, isTransportError } = await import('../../src/fetch/resilient-fetch.js')
 
 describe('createResilientFetch', () => {
   let mockFetch: ReturnType<typeof vi.fn>
@@ -393,5 +393,156 @@ describe('createResilientFetch', () => {
       const res = await resilientFetch('https://api.example.com')
       expect(await res.text()).toBe(body)
     })
+  })
+})
+
+describe('isTransportError', () => {
+  it('returns true for TransportUnavailableError', () => {
+    expect(isTransportError(new TransportUnavailableError('http://x.onion'))).toBe(true)
+  })
+
+  it('returns true for ECONNREFUSED', () => {
+    const err = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+    expect(isTransportError(err)).toBe(true)
+  })
+
+  it('returns true for ETIMEDOUT', () => {
+    const err = Object.assign(new Error('connect ETIMEDOUT'), { code: 'ETIMEDOUT' })
+    expect(isTransportError(err)).toBe(true)
+  })
+
+  it('returns true for ENOTFOUND', () => {
+    const err = Object.assign(new Error('getaddrinfo ENOTFOUND'), { code: 'ENOTFOUND' })
+    expect(isTransportError(err)).toBe(true)
+  })
+
+  it('returns true for UND_ERR_CONNECT_TIMEOUT', () => {
+    const err = Object.assign(new Error('connect timeout'), { code: 'UND_ERR_CONNECT_TIMEOUT' })
+    expect(isTransportError(err)).toBe(true)
+  })
+
+  it('returns false for ECONNRESET (mid-response reset — not a transport failure)', () => {
+    const err = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
+    expect(isTransportError(err)).toBe(false)
+  })
+
+  it('returns false for SsrfError', () => {
+    expect(isTransportError(new SsrfError('private IP', 'http://10.0.0.1'))).toBe(false)
+  })
+
+  it('returns false for plain Error', () => {
+    expect(isTransportError(new Error('something else'))).toBe(false)
+  })
+
+  it('returns false for non-Error', () => {
+    expect(isTransportError('string error')).toBe(false)
+    expect(isTransportError(null)).toBe(false)
+  })
+})
+
+describe('withTransportFallback', () => {
+  beforeEach(() => {
+    mockValidateUrl.mockReset()
+    mockValidateUrl.mockResolvedValue({ address: '93.184.216.34', family: 4 })
+  })
+
+  it('returns response from first URL when it succeeds', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }))
+    const res = await withTransportFallback(['https://a.example.com'], {}, fetchFn)
+    expect(res.status).toBe(200)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+    expect(fetchFn).toHaveBeenCalledWith('https://a.example.com', {}, undefined)
+  })
+
+  it('falls back to second URL on ECONNREFUSED from first', async () => {
+    const connRefused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(connRefused)
+      .mockResolvedValueOnce(new Response('ok from b', { status: 200 }))
+
+    const res = await withTransportFallback(
+      ['https://a.example.com', 'https://b.example.com'],
+      {},
+      fetchFn,
+    )
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe('ok from b')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('does NOT fall back on HTTP 403 (non-transport error)', async () => {
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(new Response('forbidden', { status: 403 }))
+      .mockResolvedValueOnce(new Response('ok from b', { status: 200 }))
+
+    const res = await withTransportFallback(
+      ['https://a.example.com', 'https://b.example.com'],
+      {},
+      fetchFn,
+    )
+    // 403 is returned as-is — no fallback
+    expect(res.status).toBe(403)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fall back on SsrfError', async () => {
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(new SsrfError('private IP', 'http://a.example.com'))
+      .mockResolvedValueOnce(new Response('ok from b', { status: 200 }))
+
+    await expect(
+      withTransportFallback(['https://a.example.com', 'https://b.example.com'], {}, fetchFn),
+    ).rejects.toThrow(SsrfError)
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fall back on ECONNRESET', async () => {
+    const connReset = Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(connReset)
+      .mockResolvedValueOnce(new Response('ok from b', { status: 200 }))
+
+    await expect(
+      withTransportFallback(['https://a.example.com', 'https://b.example.com'], {}, fetchFn),
+    ).rejects.toThrow('socket hang up')
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
+  it('throws when all transports fail with transport errors', async () => {
+    const connRefused = Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })
+    const fetchFn = vi.fn().mockRejectedValue(connRefused)
+
+    await expect(
+      withTransportFallback(['https://a.example.com', 'https://b.example.com'], {}, fetchFn),
+    ).rejects.toThrow('connect ECONNREFUSED')
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('throws generic "All transports exhausted" when urls array is empty', async () => {
+    const fetchFn = vi.fn()
+    await expect(withTransportFallback([], {}, fetchFn)).rejects.toThrow('All transports exhausted')
+    expect(fetchFn).not.toHaveBeenCalled()
+  })
+
+  it('falls back on TransportUnavailableError (e.g. .onion without Tor proxy)', async () => {
+    const noTor = new TransportUnavailableError('http://secret.onion', 'Tor proxy required for .onion addresses')
+    const fetchFn = vi.fn()
+      .mockRejectedValueOnce(noTor)
+      .mockResolvedValueOnce(new Response('ok from clearnet', { status: 200 }))
+
+    const res = await withTransportFallback(
+      ['http://secret.onion', 'https://clear.example.com'],
+      {},
+      fetchFn,
+    )
+    expect(res.status).toBe(200)
+    expect(fetchFn).toHaveBeenCalledTimes(2)
+  })
+
+  it('passes options to the underlying fetch function', async () => {
+    const fetchFn = vi.fn().mockResolvedValue(new Response('ok', { status: 200 }))
+    const options = { retries: 0, timeoutMs: 5000 }
+    await withTransportFallback(['https://a.example.com'], { method: 'POST' }, fetchFn, options)
+    expect(fetchFn).toHaveBeenCalledWith('https://a.example.com', { method: 'POST' }, options)
   })
 })
