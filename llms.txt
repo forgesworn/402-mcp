@@ -4,7 +4,7 @@
 
 402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payment rails are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
 
-Agents can also discover paid APIs without knowing URLs upfront. The `l402_search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services.
+Agents can also discover paid APIs without knowing URLs upfront. The `l402_search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — enabling censorship-resistant API access without any client-side configuration.
 
 ## Getting Started
 
@@ -50,6 +50,9 @@ Add to your MCP configuration:
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
+| `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services |
+| `TOR_PROXY` | — | SOCKS5 proxy for .onion routing (e.g. `socks5://127.0.0.1:9050`) |
+| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake name resolution |
 
 ## Key Concepts
 
@@ -59,6 +62,7 @@ Add to your MCP configuration:
 - **Credential store** — paid macaroons are persisted locally and encrypted with AES-256-GCM. Subsequent requests to the same server reuse credentials rather than paying again.
 - **Credit balance** — many L402 servers (including toll-booth) grant a credit balance after payment. 402-mcp tracks and caches that balance so the agent can reason about remaining capacity.
 - **Service discovery** — agents can search for L402 services on Nostr relays by querying kind 31402 announcements, finding paid APIs by topic, capability, or payment method.
+- **Multi-transport** — discovered services may advertise multiple endpoints (HTTPS, Tor .onion, Handshake HNS). The agent selects the best transport by preference (default: onion > hns > https > http), filters by capability (e.g. .onion requires a Tor proxy), and falls back automatically on connection failure. Credentials are keyed by service pubkey, not URL origin, so a macaroon obtained via one transport works on any other.
 
 ## Core L402 Tools
 
@@ -90,7 +94,7 @@ Check the cached credit balance for a specific server URL. Returns the number of
 
 ### `l402_search`
 
-Search for L402 services on Nostr relays. Queries kind 31402 announcement events and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Use the returned URL with `l402_discover` or `l402_fetch` to interact with the service. This enables agents to find paid APIs without knowing URLs upfront — a decentralised alternative to API directories.
+Search for L402 services on Nostr relays. Queries kind 31402 announcement events and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402_fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront — a decentralised alternative to API directories.
 
 ## toll-booth Extension Tools
 
@@ -127,7 +131,7 @@ The human stays in control of three things: the safety caps, which payment metho
 
 ## Security
 
-- **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
+- **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Handshake names are resolved via DNS-over-HTTPS with the resolved IP validated against blocked ranges. .onion addresses bypass DNS and route through the configured SOCKS proxy. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
 - **Credential encryption** — stored credentials are encrypted with AES-256-GCM. The encryption key is stored in the OS keychain when available, falling back to a file-based key with a warning.
 - **Preimage validation** — preimages are validated as hex before storage to prevent header injection.
 - **Spend tracking** — atomic `tryRecord()` prevents TOCTOU race conditions in concurrent spend checks.

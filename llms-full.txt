@@ -84,9 +84,11 @@ src/
     cashu-tokens.ts        # Cashu token store (add/remove/balance)
     encryption.ts          # AES-256-GCM encryption (keychain or file key)
   fetch/
-    resilient-fetch.ts     # Timeout, retry, response size limits
-    ssrf-guard.ts          # Block requests to private/internal IPs
-    errors.ts              # Fetch error types
+    transport.ts           # URL classification (onion/hns/https/http) and selection
+    hns-resolve.ts         # Handshake name resolution via DNS-over-HTTPS (RFC 8484)
+    resilient-fetch.ts     # Timeout, retry, response size limits, transport fallback
+    ssrf-guard.ts          # Block requests to private/internal IPs, HNS fallback
+    errors.ts              # Fetch error types (including TransportUnavailableError)
 tests/                     # Mirrors src/ structure
   e2e/                     # Integration tests against in-process toll-booth
 ```
@@ -213,13 +215,13 @@ tests/                     # Mirrors src/ structure
 - `timeout` (number, optional) — relay timeout in ms (default 5000)
 
 **Returns:** Array of services with:
-- `name`, `url`, `about` — service metadata
+- `name`, `urls` (array), `pubkey`, `about` — service metadata
 - `pricing` — array of `{ capability, amount, unit }`
 - `paymentMethods` — supported payment methods
 - `topics` — topic tags
 - `capabilities` — array of `{ name, description }`
 
-**When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements.
+**When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements. Services may advertise multiple transport URLs (clearnet, .onion, Handshake); pass the `urls` array and `pubkey` to `l402_fetch` for automatic transport selection and fallback.
 
 ---
 
@@ -352,6 +354,37 @@ HTTP transport includes:
 | `HUMAN_PAY_POLL_S` | 3 | Initial polling interval for human payment (seconds). |
 | `SSRF_ALLOW_PRIVATE` | false | Allow requests to private IP ranges. Local development only. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | — | Warning emitted if set to "0" (disables TLS validation). |
+| `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services. |
+| `TOR_PROXY` | — | SOCKS5 proxy for .onion routing (e.g. `socks5://127.0.0.1:9050`). Falls back to `SOCKS_PROXY`. |
+| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake (HNS) name resolution. |
+
+## Multi-Transport Endpoints
+
+Services discovered via `l402_search` may advertise multiple transport URLs for censorship resistance. If a DNS seizure, registrar suspension, or CA revocation takes down one endpoint, the agent automatically falls back to an alternative.
+
+### Transport Types
+
+| Transport | Example | Detection |
+|-----------|---------|-----------|
+| Onion | `http://abc123...onion/api` | Hostname ends in `.onion` |
+| Handshake | `https://api.myservice/api` | TLD not in ICANN root zone (heuristic) |
+| HTTPS | `https://api.example.com/api` | Standard TLD + `https://` |
+| HTTP | `http://api.example.com/api` | Standard TLD + `http://` |
+
+### Selection and Fallback
+
+1. **Filter** — .onion URLs are removed when no Tor proxy is configured
+2. **Sort** — URLs are ordered by `TRANSPORT_PREFERENCE` (default: onion > hns > https > http)
+3. **Try** — each URL is tried in order; connection-level failures (DNS, ECONNREFUSED, timeout, TLS failure) trigger fallback to the next URL
+4. **Stop** — any HTTP response (including 402, 500) is returned immediately without fallback
+
+### HNS Resolution
+
+Handshake names are resolved via DNS-over-HTTPS (RFC 8484 wire format) through the configured gateway. When standard DNS returns NXDOMAIN, the SSRF guard tries HNS resolution as a fallback. Resolved IPs are validated against blocked ranges before connecting.
+
+### Credential Portability
+
+Credentials are keyed by service **pubkey** (from the kind 31402 event), not by URL origin. A macaroon obtained via a Tor hidden service works over clearnet, and vice versa. This is essential for transport fallback — the agent doesn't need to re-authenticate when switching transports.
 
 ## Ecosystem
 
@@ -388,6 +421,16 @@ HTTP transport includes:
 1. l402_discover(url)               → Confirm toll-booth server
 2. l402_redeem_cashu(url, token)    → Direct ecash redemption
 3. l402_fetch(url, ...)             → Use credits from redemption
+```
+
+### Agent discovers service with transport fallback
+
+```
+1. l402_search("weather data")       → Service found with 3 URLs (clearnet, .onion, HNS)
+2. l402_fetch(urls, pubkey: ...)     → Tries .onion first (if Tor configured)
+                                       → .onion down? Falls back to HNS
+                                       → HNS unreachable? Falls back to clearnet
+3. l402_balance(url)                 → Credential works across all transports (keyed by pubkey)
 ```
 
 ### Agent with no wallet (human-in-the-loop)
