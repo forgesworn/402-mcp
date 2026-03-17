@@ -1,3 +1,10 @@
+# [3.12.0](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.11.2...v3.12.0) (2026-03-17)
+
+
+### Features
+
+* add x402 challenge detection and human-in-the-loop payment ([e323157](https://github.com/TheCryptoDonkey/402-mcp/commit/e3231577776edc9d777a60467dbe890834a855c2))
+
 ## [3.11.2](https://github.com/TheCryptoDonkey/402-mcp/compare/v3.11.1...v3.11.2) (2026-03-16)
 
 
