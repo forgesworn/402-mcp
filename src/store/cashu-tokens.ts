@@ -55,6 +55,20 @@ export class CashuTokenStore {
     this.save()
   }
 
+  /** Returns all tokens from a specific mint (URL normalised — trailing slashes ignored). */
+  listByMint(mintUrl: string): StoredToken[] {
+    const normalised = mintUrl.replace(/\/+$/, '')
+    return this.data.tokens.filter(t => t.mint.replace(/\/+$/, '') === normalised)
+  }
+
+  /** Removes specific tokens from the store (matched by token string). */
+  removeTokens(tokens: StoredToken[]): void {
+    const toRemove = new Set(tokens.map(t => t.token))
+    const before = this.data.tokens.length
+    this.data.tokens = this.data.tokens.filter(t => !toRemove.has(t.token))
+    if (this.data.tokens.length !== before) this.save()
+  }
+
   private load(): void {
     if (!existsSync(this.path)) return
     try {
