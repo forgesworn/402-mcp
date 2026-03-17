@@ -156,7 +156,7 @@ export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
         query: z.string().max(200).describe('Search query to match against service names, descriptions, and capabilities'),
         relays: z.array(z.url()).max(10).optional().describe('Nostr relay URLs to query (defaults to popular public relays)'),
         topics: z.array(z.string().max(50)).max(10).optional().describe('Filter by topic tags (e.g. ["ai", "data"])'),
-        paymentMethod: z.string().max(100).optional().describe('Filter by payment method (e.g. "bitcoin-lightning-bolt11", "bitcoin-cashu")'),
+        paymentMethod: z.string().max(100).optional().describe('Filter by payment method (e.g. "l402", "cashu", "x402", "xcashu")'),
         maxResults: z.int().min(1).max(100).optional().describe('Maximum number of results to return (default 20)'),
         timeout: z.int().min(1000).max(30000).optional().describe('Relay subscription timeout in milliseconds (default 5000)'),
       },

@@ -18,8 +18,8 @@ function makeEvent(overrides: Partial<NostrEvent> & { tags?: string[][] } = {}):
       ['name', 'Alpha Service'],
       ['url', 'https://alpha.example.com'],
       ['about', 'An AI chat service'],
-      ['pmi', 'bitcoin-lightning-bolt11'],
-      ['pmi', 'bitcoin-cashu'],
+      ['pmi', 'l402', 'lightning'],
+      ['pmi', 'cashu'],
       ['price', 'chat', '10', 'sats'],
       ['t', 'ai'],
       ['t', 'inference'],
@@ -43,7 +43,7 @@ describe('parseAnnounceEvent', () => {
     expect(result.urls).toEqual(['https://alpha.example.com'])
     expect(result.about).toBe('An AI chat service')
     expect(result.pubkey).toBe('abc123pubkey')
-    expect(result.paymentMethods).toEqual(['bitcoin-lightning-bolt11', 'bitcoin-cashu'])
+    expect(result.paymentMethods).toEqual(['l402', 'cashu'])
     expect(result.pricing).toEqual([{ capability: 'chat', amount: '10', unit: 'sats' }])
     expect(result.topics).toEqual(['ai', 'inference'])
   })
@@ -207,17 +207,17 @@ describe('handleSearch', () => {
     expect(parsed).toHaveLength(1)
     expect(parsed[0].name).toBe('Alpha Service')
     expect(parsed[0].urls).toEqual(['https://alpha.example.com'])
-    expect(parsed[0].paymentMethods).toEqual(['bitcoin-lightning-bolt11', 'bitcoin-cashu'])
+    expect(parsed[0].paymentMethods).toEqual(['l402', 'cashu'])
   })
 
   it('passes payment method filter to subscribeEvents and returns relay-filtered results', async () => {
-    const bolt11Event = makeEvent({
-      id: 'evt-bolt11',
+    const l402Event = makeEvent({
+      id: 'evt-l402',
       tags: [
-        ['d', 'bolt11-only'],
-        ['name', 'Bolt11 Service'],
-        ['url', 'https://bolt11.example.com'],
-        ['pmi', 'bitcoin-lightning-bolt11'],
+        ['d', 'l402-only'],
+        ['name', 'L402 Service'],
+        ['url', 'https://l402.example.com'],
+        ['pmi', 'l402', 'lightning'],
         ['t', 'ai'],
       ],
     })
@@ -228,11 +228,11 @@ describe('handleSearch', () => {
         ['d', 'cashu-only'],
         ['name', 'Cashu Service'],
         ['url', 'https://cashu.example.com'],
-        ['pmi', 'bitcoin-cashu'],
+        ['pmi', 'cashu'],
         ['t', 'ai'],
       ],
     })
-    const allEvents = [bolt11Event, cashuEvent]
+    const allEvents = [l402Event, cashuEvent]
     let capturedFilters: SubscribeFilters | undefined
 
     // Simulate relay-side filtering: relay returns only events matching the pmi filter
@@ -247,12 +247,12 @@ describe('handleSearch', () => {
     }
 
     const result = await handleSearch(
-      { query: 'ai', paymentMethod: 'bitcoin-cashu' },
+      { query: 'ai', paymentMethod: 'cashu' },
       deps,
     )
     const parsed = JSON.parse(result.content[0].text)
 
-    expect(capturedFilters).toEqual({ '#pmi': ['bitcoin-cashu'] })
+    expect(capturedFilters).toEqual({ '#pmi': ['cashu'] })
     expect(parsed).toHaveLength(1)
     expect(parsed[0].name).toBe('Cashu Service')
   })
@@ -264,7 +264,7 @@ describe('handleSearch', () => {
         ['d', 'ai-svc'],
         ['name', 'AI Service'],
         ['url', 'https://ai.example.com'],
-        ['pmi', 'bitcoin-lightning-bolt11'],
+        ['pmi', 'l402', 'lightning'],
         ['t', 'ai'],
         ['t', 'inference'],
       ],
@@ -276,7 +276,7 @@ describe('handleSearch', () => {
         ['d', 'weather-svc'],
         ['name', 'Weather Service'],
         ['url', 'https://weather.example.com'],
-        ['pmi', 'bitcoin-lightning-bolt11'],
+        ['pmi', 'l402', 'lightning'],
         ['t', 'weather'],
         ['t', 'data'],
       ],
@@ -326,7 +326,7 @@ describe('handleSearch', () => {
           ['d', `svc-${i}`],
           ['name', `Service ${i}`],
           ['url', `https://svc${i}.example.com`],
-          ['pmi', 'bitcoin-lightning-bolt11'],
+          ['pmi', 'l402', 'lightning'],
           ['t', 'ai'],
         ],
       }),
@@ -445,7 +445,7 @@ describe('handleSearch', () => {
         ['name', 'Generic API'],
         ['url', 'https://generic.example.com'],
         ['about', 'Provides image generation'],
-        ['pmi', 'bitcoin-lightning-bolt11'],
+        ['pmi', 'l402', 'lightning'],
       ],
       content: JSON.stringify({
         capabilities: [{ name: 'generate', description: 'Generate images' }],

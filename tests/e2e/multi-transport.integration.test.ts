@@ -20,7 +20,7 @@ function buildAnnounceEvent(urls: string[]): NostrEvent {
       ['name', 'Test Service'],
       ['about', 'A service with multiple transports'],
       ...urls.map(u => ['url', u]),
-      ['pmi', 'bitcoin-lightning-bolt11'],
+      ['pmi', 'l402', 'lightning'],
     ],
     content: JSON.stringify({
       capabilities: [
