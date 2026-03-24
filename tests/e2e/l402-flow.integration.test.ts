@@ -15,6 +15,8 @@ import { CredentialStore } from '../../src/store/credentials.js'
 import { SpendTracker } from '../../src/spend-tracker.js'
 import { isX402Challenge, parseX402Challenge } from '../../src/x402/parse.js'
 import { formatX402PaymentRequest } from '../../src/x402/payment.js'
+import { isIETFPaymentChallenge, parseIETFPaymentChallenge } from '../../src/ietf-payment/parse.js'
+import { buildIETFPaymentCredential } from '../../src/ietf-payment/credential.js'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -132,6 +134,9 @@ describe('L402 integration flow', () => {
         isX402: isX402Challenge,
         parseX402: parseX402Challenge,
         formatX402: formatX402PaymentRequest,
+        isIETFPayment: isIETFPaymentChallenge,
+        parseIETFPayment: parseIETFPaymentChallenge,
+        buildIETFCredential: buildIETFPaymentCredential,
       },
     )
 
@@ -199,6 +204,9 @@ describe('L402 integration flow', () => {
         isX402: isX402Challenge,
         parseX402: parseX402Challenge,
         formatX402: formatX402PaymentRequest,
+        isIETFPayment: isIETFPaymentChallenge,
+        parseIETFPayment: parseIETFPaymentChallenge,
+        buildIETFCredential: buildIETFPaymentCredential,
       },
     )
 
@@ -257,6 +265,9 @@ describe('L402 integration flow', () => {
       isX402: isX402Challenge,
       parseX402: parseX402Challenge,
       formatX402: formatX402PaymentRequest,
+      isIETFPayment: isIETFPaymentChallenge,
+      parseIETFPayment: parseIETFPaymentChallenge,
+      buildIETFCredential: buildIETFPaymentCredential,
     }
 
     // Use up all 110 credits (each request costs 1 sat per defaultInvoiceAmount)

@@ -29,6 +29,8 @@ import { isX402Challenge, parseX402Challenge } from './x402/parse.js'
 import { formatX402PaymentRequest } from './x402/payment.js'
 import { isXCashuChallenge, parseXCashuChallenge } from './xcashu/parse.js'
 import { attemptXCashuPayment } from './xcashu/payment.js'
+import { isIETFPaymentChallenge, parseIETFPaymentChallenge } from './ietf-payment/parse.js'
+import { buildIETFPaymentCredential } from './ietf-payment/credential.js'
 import { createResilientFetch, withTransportFallback } from './fetch/resilient-fetch.js'
 import { selectTransports } from './fetch/transport.js'
 import { resolveHns as resolveHnsBase } from './fetch/hns-resolve.js'
@@ -201,6 +203,9 @@ registerFetchTool(server, {
   payXCashu: cashuTokenStore
     ? (challenge) => withCashuLock(() => attemptXCashuPayment({ challenge, tokenStore: cashuTokenStore }))
     : async () => null,
+  isIETFPayment: isIETFPaymentChallenge,
+  parseIETFPayment: parseIETFPaymentChallenge,
+  buildIETFCredential: buildIETFPaymentCredential,
 })
 
 registerPayTool(server, {

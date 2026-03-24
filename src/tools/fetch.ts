@@ -10,6 +10,7 @@ import type { ChallengeCache } from '../l402/challenge-cache.js'
 import type { WalletMethod } from '../wallet/types.js'
 import type { X402Challenge } from '../x402/parse.js'
 import type { XCashuChallenge } from '../xcashu/parse.js'
+import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
 
@@ -49,6 +50,12 @@ export interface FetchDeps {
   parseXCashu: (header: string) => XCashuChallenge | null
   /** Attempts xcashu payment. Returns cashuB token header or null. */
   payXCashu: (challenge: XCashuChallenge) => Promise<{ header: string; amountSats: number } | null>
+  /** Detects IETF Payment challenge from WWW-Authenticate header. */
+  isIETFPayment: (headers: Headers) => boolean
+  /** Parses IETF Payment challenge from WWW-Authenticate header value. */
+  parseIETFPayment: (header: string) => IETFPaymentChallenge | null
+  /** Builds base64url credential for Authorization: Payment header. */
+  buildIETFCredential: (challenge: IETFPaymentChallenge, preimage: string) => string
 }
 
 function parseBalance(value: string | null): number | null {
@@ -194,8 +201,78 @@ export async function handleFetch(
       // Header said x402 but body was unparseable — fall through to generic 402
     }
 
+    // IETF Payment challenge: Lightning via draft-ryan-httpauth-payment-01
+    const wwwAuth = response.headers.get('www-authenticate') ?? ''
+    if (deps.isIETFPayment(response.headers)) {
+      const ietfChallenge = deps.parseIETFPayment(wwwAuth)
+      if (ietfChallenge?.invoice && ietfChallenge.amountSats) {
+        const ietfAutoPay = args.autoPay ?? false
+        if (ietfAutoPay && ietfChallenge.amountSats <= deps.maxAutoPaySats) {
+          const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)
+          if (ietfWithinLimit) {
+            const ietfPayResult = await deps.payInvoice(ietfChallenge.invoice, { serverOrigin: origin })
+            if (!ietfPayResult.paid || !ietfPayResult.preimage) {
+              deps.spendTracker.unrecord(ietfChallenge.amountSats)
+            }
+            if (ietfPayResult.paid && ietfPayResult.preimage) {
+              if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
+                deps.spendTracker.unrecord(ietfChallenge.amountSats)
+                return {
+                  content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Payment succeeded but preimage is invalid — refusing to send' }) }],
+                  isError: true as const,
+                }
+              }
+              const credential = deps.buildIETFCredential(ietfChallenge, ietfPayResult.preimage)
+              const retryHeaders: Record<string, string> = { ...reqHeaders }
+              retryHeaders['Authorization'] = `Payment ${credential}`
+
+              const retryResponse = await doFetch(primaryUrl, {
+                method: args.method ?? 'GET',
+                headers: retryHeaders,
+                body: args.body,
+              })
+
+              const retryBody = await retryResponse.text()
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    status: retryResponse.status,
+                    headers: filterResponseHeaders(retryResponse.headers),
+                    body: retryBody,
+                    satsPaid: ietfChallenge.amountSats,
+                    paymentMethod: 'ietf-payment',
+                  }, null, 2),
+                }],
+              }
+            }
+          }
+        }
+        // IETF Payment detected but not auto-paid — return challenge details
+        if (!ietfAutoPay || ietfChallenge.amountSats > deps.maxAutoPaySats) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                status: 402,
+                protocol: 'ietf-payment',
+                costSats: ietfChallenge.amountSats,
+                paymentHash: ietfChallenge.paymentHash,
+                realm: ietfChallenge.realm,
+                intent: ietfChallenge.intent,
+                message: !ietfAutoPay
+                  ? `Payment of ${ietfChallenge.amountSats} sats required (IETF Payment). autoPay disabled.`
+                  : `Payment of ${ietfChallenge.amountSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`,
+              }, null, 2),
+            }],
+          }
+        }
+        // Fall through to L402 if spend limit reached
+      }
+    }
+
     // L402 challenge: Lightning payment
-    const authHeader = response.headers.get('www-authenticate') ?? ''
+    const authHeader = wwwAuth
     const challenge = deps.parseL402(authHeader)
 
     const decoded = challenge ? deps.decodeBolt11(challenge.invoice) : { costSats: null, paymentHash: null, expiry: 3600 }

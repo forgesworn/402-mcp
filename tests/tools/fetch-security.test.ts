@@ -27,6 +27,9 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     isX402: vi.fn().mockReturnValue(false),
     parseX402: vi.fn().mockReturnValue(null),
     formatX402: vi.fn().mockReturnValue({ json: {}, message: '' }),
+    isIETFPayment: vi.fn().mockReturnValue(false),
+    parseIETFPayment: vi.fn().mockReturnValue(null),
+    buildIETFCredential: vi.fn().mockReturnValue(''),
     ...overrides,
   }
 }
