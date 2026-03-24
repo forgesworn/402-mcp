@@ -94,5 +94,9 @@
     "llms.txt",
     "llms-full.txt"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "funding": {
+    "type": "lightning",
+    "url": "lightning:thedonkey@strike.me"
+  }
 }
