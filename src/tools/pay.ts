@@ -226,16 +226,17 @@ export async function handlePay(
   }
 }
 
-/** Registers the l402_pay tool with the MCP server. */
+/** Registers the l402-pay tool with the MCP server. */
 export function registerPayTool(server: McpServer, deps: PayDeps): void {
   server.registerTool(
-    'l402_pay',
+    'l402-pay',
     {
-      description: 'Confirm payment and store credentials. Call this after l402_fetch returns a 402 with a paymentHash — polls the payment server for settlement (up to 30s for human wallet), then stores the credential so the next l402_fetch succeeds. For human wallets, call this immediately after showing the payment URL to the user.',
+      description: 'Confirm payment and store credentials. Call this after l402-fetch returns a 402 with a paymentHash — polls the payment server for settlement (up to 30s for human wallet), then stores the credential so the next l402-fetch succeeds. For human wallets, call this immediately after showing the payment URL to the user.',
+      annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
-        invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice to pay. Optional if paymentHash matches a cached challenge from l402_discover.'),
+        invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice to pay. Optional if paymentHash matches a cached challenge from l402-discover.'),
         macaroon: z.string().max(10_000).optional().describe('Macaroon from the L402 challenge. Optional if paymentHash matches a cached challenge.'),
-        paymentHash: z.string().max(128).optional().describe('Payment hash to look up cached challenge from l402_discover.'),
+        paymentHash: z.string().max(128).optional().describe('Payment hash to look up cached challenge from l402-discover.'),
         method: z.enum(['nwc', 'cashu', 'human']).optional().describe('Payment method override. Defaults to wallet priority: NWC > Cashu > human.'),
       },
     },

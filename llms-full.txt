@@ -56,15 +56,15 @@ src/
   config.ts                # Environment variable parsing with validation
   spend-tracker.ts         # Atomic rolling-window spend limiter
   tools/
-    config.ts              # l402_config — introspect capabilities
-    discover.ts            # l402_discover — probe pricing without paying
-    fetch.ts               # l402_fetch — full L402 payment flow
-    pay.ts                 # l402_pay — explicit invoice payment
-    credentials.ts         # l402_credentials — list stored credentials
-    balance.ts             # l402_balance — check cached credit balance
-    search.ts              # l402_search — discover services on Nostr
-    buy-credits.ts         # l402_buy_credits — toll-booth credit tiers
-    redeem-cashu.ts        # l402_redeem_cashu — direct ecash redemption
+    config.ts              # l402-config — introspect capabilities
+    discover.ts            # l402-discover — probe pricing without paying
+    fetch.ts               # l402-fetch — full L402 payment flow
+    pay.ts                 # l402-pay — explicit invoice payment
+    credentials.ts         # l402-credentials — list stored credentials
+    balance.ts             # l402-balance — check cached credit balance
+    search.ts              # l402-search — discover services on Nostr
+    buy-credits.ts         # l402-buy-credits — toll-booth credit tiers
+    redeem-cashu.ts        # l402-redeem-cashu — direct ecash redemption
     nostr-subscribe.ts     # Nostr relay subscription for search
     safe-error.ts          # Error sanitisation (strips internal details)
     safe-headers.ts        # Header sanitisation (strips auth tokens)
@@ -78,7 +78,7 @@ src/
     parse.ts               # Parse WWW-Authenticate L402 challenges
     detect.ts              # Detect toll-booth vs generic L402 servers
     bolt11.ts              # Decode BOLT11 invoices (amount extraction)
-    challenge-cache.ts     # Cache parsed challenges for l402_pay
+    challenge-cache.ts     # Cache parsed challenges for l402-pay
   store/
     credentials.ts         # Encrypted credential persistence (JSON)
     cashu-tokens.ts        # Cashu token store (add/remove/balance)
@@ -95,7 +95,7 @@ tests/                     # Mirrors src/ structure
 
 ## Complete Tool Reference
 
-### l402_config
+### l402-config
 
 **Purpose:** Introspect the agent's payment capabilities and current configuration.
 
@@ -112,7 +112,7 @@ tests/                     # Mirrors src/ structure
 
 ---
 
-### l402_discover
+### l402-discover
 
 **Purpose:** Probe an endpoint to discover pricing without paying.
 
@@ -125,13 +125,13 @@ tests/                     # Mirrors src/ structure
 - `amountSats` (number) — price in satoshis
 - `server` (string) — detected server type ("toll-booth" or null)
 - `hasTiers` (boolean) — whether credit tiers are available
-- `challenge` — cached for subsequent `l402_pay`
+- `challenge` — cached for subsequent `l402-pay`
 
 **When to use:** Before committing to a purchase, so the agent can reason about value.
 
 ---
 
-### l402_fetch
+### l402-fetch
 
 **Purpose:** Make an HTTP request with automatic L402 payment handling.
 
@@ -154,14 +154,14 @@ tests/                     # Mirrors src/ structure
 
 ---
 
-### l402_pay
+### l402-pay
 
 **Purpose:** Pay a specific Lightning invoice.
 
 **Parameters:**
 - `invoice` (string, required) — BOLT11 invoice to pay
 - `paymentMethod` (string, optional) — force a specific payment rail
-- `challengeId` (string, optional) — ID from a previous `l402_discover` to associate the payment
+- `challengeId` (string, optional) — ID from a previous `l402-discover` to associate the payment
 
 **Returns:**
 - `paid` (boolean)
@@ -172,7 +172,7 @@ tests/                     # Mirrors src/ structure
 
 ---
 
-### l402_credentials
+### l402-credentials
 
 **Purpose:** List all stored L402 credentials.
 
@@ -188,7 +188,7 @@ tests/                     # Mirrors src/ structure
 
 ---
 
-### l402_balance
+### l402-balance
 
 **Purpose:** Check cached credit balance for a server.
 
@@ -198,11 +198,11 @@ tests/                     # Mirrors src/ structure
 **Returns:**
 - `balance` (number | null) — credits remaining, or null if unknown
 
-**When to use:** Before calling `l402_fetch` to confirm sufficient balance.
+**When to use:** Before calling `l402-fetch` to confirm sufficient balance.
 
 ---
 
-### l402_search
+### l402-search
 
 **Purpose:** Discover L402 services on Nostr relays.
 
@@ -221,11 +221,11 @@ tests/                     # Mirrors src/ structure
 - `topics` — topic tags
 - `capabilities` — array of `{ name, description }`
 
-**When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements. Services may advertise multiple transport URLs (clearnet, .onion, Handshake); pass the `urls` array and `pubkey` to `l402_fetch` for automatic transport selection and fallback.
+**When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements. Services may advertise multiple transport URLs (clearnet, .onion, Handshake); pass the `urls` array and `pubkey` to `l402-fetch` for automatic transport selection and fallback.
 
 ---
 
-### l402_buy_credits (toll-booth only)
+### l402-buy-credits (toll-booth only)
 
 **Purpose:** Browse and purchase volume discount credit tiers.
 
@@ -240,7 +240,7 @@ tests/                     # Mirrors src/ structure
 
 ---
 
-### l402_redeem_cashu (toll-booth only)
+### l402-redeem-cashu (toll-booth only)
 
 **Purpose:** Redeem Cashu ecash tokens directly with the server.
 
@@ -264,7 +264,7 @@ The L402 protocol is an extension of HTTP 402 (Payment Required):
    - `Authorization: L402 <base64-macaroon>:<hex-preimage>`
 5. **Server** validates the macaroon + preimage and returns the data
 
-402-mcp handles steps 2–5 automatically within `l402_fetch`.
+402-mcp handles steps 2–5 automatically within `l402-fetch`.
 
 ## Wallet Priority and Resolution
 
@@ -360,7 +360,7 @@ HTTP transport includes:
 
 ## Multi-Transport Endpoints
 
-Services discovered via `l402_search` may advertise multiple transport URLs for censorship resistance. If a DNS seizure, registrar suspension, or CA revocation takes down one endpoint, the agent automatically falls back to an alternative.
+Services discovered via `l402-search` may advertise multiple transport URLs for censorship resistance. If a DNS seizure, registrar suspension, or CA revocation takes down one endpoint, the agent automatically falls back to an alternative.
 
 ### Transport Types
 
@@ -400,43 +400,43 @@ Credentials are keyed by service **pubkey** (from the kind 31402 event), not by 
 ### Agent discovers and consumes a paid API
 
 ```
-1. l402_config()                    → Understand capabilities
-2. l402_search("routing")           → Find services on Nostr
-3. l402_discover(service_url)       → Check pricing
-4. l402_fetch(service_url, ...)     → Pay and consume
+1. l402-config()                    → Understand capabilities
+2. l402-search("routing")           → Find services on Nostr
+3. l402-discover(service_url)       → Check pricing
+4. l402-fetch(service_url, ...)     → Pay and consume
 ```
 
 ### Agent buys credits for repeated access
 
 ```
-1. l402_discover(url)               → Detect toll-booth, check tiers
-2. l402_buy_credits(url, 500)       → Buy 500-sat tier (555 credits)
-3. l402_fetch(url, ...) × N         → Use credits (no payment per-request)
-4. l402_balance(url)                → Check remaining credits
+1. l402-discover(url)               → Detect toll-booth, check tiers
+2. l402-buy-credits(url, 500)       → Buy 500-sat tier (555 credits)
+3. l402-fetch(url, ...) × N         → Use credits (no payment per-request)
+4. l402-balance(url)                → Check remaining credits
 ```
 
 ### Agent redeems Cashu tokens directly
 
 ```
-1. l402_discover(url)               → Confirm toll-booth server
-2. l402_redeem_cashu(url, token)    → Direct ecash redemption
-3. l402_fetch(url, ...)             → Use credits from redemption
+1. l402-discover(url)               → Confirm toll-booth server
+2. l402-redeem-cashu(url, token)    → Direct ecash redemption
+3. l402-fetch(url, ...)             → Use credits from redemption
 ```
 
 ### Agent discovers service with transport fallback
 
 ```
-1. l402_search("weather data")       → Service found with 3 URLs (clearnet, .onion, HNS)
-2. l402_fetch(urls, pubkey: ...)     → Tries .onion first (if Tor configured)
+1. l402-search("weather data")       → Service found with 3 URLs (clearnet, .onion, HNS)
+2. l402-fetch(urls, pubkey: ...)     → Tries .onion first (if Tor configured)
                                        → .onion down? Falls back to HNS
                                        → HNS unreachable? Falls back to clearnet
-3. l402_balance(url)                 → Credential works across all transports (keyed by pubkey)
+3. l402-balance(url)                 → Credential works across all transports (keyed by pubkey)
 ```
 
 ### Agent with no wallet (human-in-the-loop)
 
 ```
-1. l402_fetch(url)                  → 402 received, amount shown
+1. l402-fetch(url)                  → 402 received, amount shown
 2. Agent presents QR code to user   → Human pays via wallet app
 3. Poll detects payment             → Credential stored, data returned
 ```

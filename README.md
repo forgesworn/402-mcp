@@ -31,7 +31,7 @@ claude mcp add 402-mcp -- npx 402-mcp
 
 **3. Try it**
 
-Ask Claude: *"Search for paid joke APIs using l402_search"* — no wallet needed, just discovery.
+Ask Claude: *"Search for paid joke APIs using l402-search"* — no wallet needed, just discovery.
 
 Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) to set up a wallet and watch your agent pay for its first API call.
 
@@ -39,10 +39,10 @@ Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) 
 
 ```mermaid
 graph LR
-    A["1. l402_config()"] --> B["2. l402_discover(url)"]
+    A["1. l402-config()"] --> B["2. l402-discover(url)"]
     B --> C["3. Agent reasons<br/>about pricing"]
-    C --> D["4. l402_buy_credits()<br/>or l402_fetch()"]
-    D --> E["5. l402_fetch(url)<br/>with credentials"]
+    C --> D["4. l402-buy-credits()<br/>or l402-fetch()"]
+    D --> E["5. l402-fetch(url)<br/>with credentials"]
     E --> F["6. Data returned<br/>+ balance cached"]
 ```
 
@@ -51,19 +51,19 @@ graph LR
 ```
 Agent: "I need routing data from routing.trotters.cc"
 
-1. l402_config()
+1. l402-config()
    -> nwcConfigured: true, maxAutoPaySats: 1000
 
-2. l402_discover("https://routing.trotters.cc/api/route")
+2. l402-discover("https://routing.trotters.cc/api/route")
    -> 10 sats/request, toll-booth detected, tiers available
 
 3. Agent reasons: "I need ~20 requests. The 500-sat tier
    gives 555 credits. Better value."
 
-4. l402_buy_credits(url, amountSats=500)
+4. l402-buy-credits(url, amountSats=500)
    -> Paid 500 sats, received 555 credits
 
-5. l402_fetch("https://routing.trotters.cc/api/route?from=...&to=...")
+5. l402-fetch("https://routing.trotters.cc/api/route?from=...&to=...")
    -> 200 OK, route data, 545 credits remaining
 ```
 
@@ -100,21 +100,21 @@ Services can announce multiple endpoints for the **same service** (same pricing,
 
 | Tool | Description |
 |------|-------------|
-| `l402_config` | Introspect payment capabilities (wallets, limits, credential count) |
-| `l402_discover` | Probe an endpoint to discover pricing without paying |
-| `l402_fetch` | HTTP request with L402 support; auto-pays if within budget |
-| `l402_pay` | Pay a specific invoice (NWC, Cashu, or human-in-the-loop) |
-| `l402_credentials` | List stored credentials and cached balances |
-| `l402_balance` | Check cached credit balance for a server |
-| `l402_search` | Discover L402 services on Nostr relays (kind 31402 announcements) |
-| `l402_store_token` | Store an L402 token obtained from a payment page |
+| `l402-config` | Introspect payment capabilities (wallets, limits, credential count) |
+| `l402-discover` | Probe an endpoint to discover pricing without paying |
+| `l402-fetch` | HTTP request with L402 support; auto-pays if within budget |
+| `l402-pay` | Pay a specific invoice (NWC, Cashu, or human-in-the-loop) |
+| `l402-credentials` | List stored credentials and cached balances |
+| `l402-balance` | Check cached credit balance for a server |
+| `l402-search` | Discover L402 services on Nostr relays (kind 31402 announcements) |
+| `l402-store-token` | Store an L402 token obtained from a payment page |
 
 ### toll-booth extensions
 
 | Tool | Description |
 |------|-------------|
-| `l402_buy_credits` | Browse and purchase volume discount tiers |
-| `l402_redeem_cashu` | Redeem Cashu tokens directly (avoids Lightning round-trip) |
+| `l402-buy-credits` | Browse and purchase volume discount tiers |
+| `l402-redeem-cashu` | Redeem Cashu tokens directly (avoids Lightning round-trip) |
 
 ## Payment methods
 
@@ -128,7 +128,7 @@ The agent can override the method per-call, or you can configure only the method
 
 ## Safety
 
-`MAX_AUTO_PAY_SATS` caps any single autonomous payment. Above this limit, the agent must ask the human for approval. The agent can read this limit via `l402_config` and factor it into purchasing decisions.
+`MAX_AUTO_PAY_SATS` caps any single autonomous payment. Above this limit, the agent must ask the human for approval. The agent can read this limit via `l402-config` and factor it into purchasing decisions.
 
 ## Privacy
 

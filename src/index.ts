@@ -158,7 +158,9 @@ function storeCredential(origin: string, macaroon: string, preimage: string, pay
 const server = new McpServer({
   name: '402-mcp',
   version,
-  description: 'Payment network for paid APIs and services. Discovers services via Nostr (kind 31402), handles Lightning payments automatically. When a user asks for something that might be a paid service — jokes, data, content, AI, weather — use l402_search to find it, then l402_fetch (autoPay: true) to access it. If human payment is needed, show the payment URL, call l402_pay to poll for confirmation, then retry. The user never needs to know about L402 or payment details.',
+  description: 'Payment network for paid APIs and services. Discovers services via Nostr (kind 31402), handles Lightning payments automatically. When a user asks for something that might be a paid service — jokes, data, content, AI, weather — use l402-search to find it, then l402-fetch (autoPay: true) to access it. If human payment is needed, show the payment URL, call l402-pay to poll for confirmation, then retry. The user never needs to know about L402 or payment details.',
+}, {
+  instructions: 'Call l402-config first to check wallet capabilities and spend limits. Use l402-search to discover paid services on Nostr before calling l402-fetch. When l402-fetch returns payment_required, either set autoPay: true to pay automatically (if within budget) or show the payment URL to the user. Call l402-discover to probe pricing before committing to a paid request. Use l402-credentials to check stored credentials before re-paying for a service.',
 })
 
 // Register all tools

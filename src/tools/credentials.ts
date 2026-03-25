@@ -11,12 +11,13 @@ export function handleCredentials(store: CredentialStore) {
   }
 }
 
-/** Registers the l402_credentials tool with the MCP server. */
+/** Registers the l402-credentials tool with the MCP server. */
 export function registerCredentialsTool(server: McpServer, store: CredentialStore): void {
   server.registerTool(
-    'l402_credentials',
+    'l402-credentials',
     {
       description: 'List all stored L402 credentials. Shows origin, cached credit balance, and server type. Balance values are cached and may be stale; check lastUsed timestamp.',
+      annotations: { readOnlyHint: true },
       inputSchema: {},
     },
     () => handleCredentials(store),

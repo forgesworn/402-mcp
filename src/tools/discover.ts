@@ -57,7 +57,7 @@ export async function handleDiscover(
     const decoded = deps.decodeBolt11(challenge.invoice)
     const serverInfo = detectServer(response.headers, body)
 
-    // Cache the challenge for later use by l402_pay
+    // Cache the challenge for later use by l402-pay
     deps.cache.set({
       invoice: challenge.invoice,
       macaroon: challenge.macaroon,
@@ -100,15 +100,16 @@ export async function handleDiscover(
   }
 }
 
-/** Registers the l402_discover tool with the MCP server. */
+/** Registers the l402-discover tool with the MCP server. */
 export function registerDiscoverTool(
   server: McpServer,
   deps: DiscoverDeps,
 ): void {
   server.registerTool(
-    'l402_discover',
+    'l402-discover',
     {
-      description: 'Probe an endpoint to discover its L402 pricing without committing to payment. Returns the cost in sats, available payment methods, and credit tiers (if toll-booth server). The challenge is cached so a subsequent l402_pay can reuse it.',
+      description: 'Probe an endpoint to discover its L402 pricing without committing to payment. Returns the cost in sats, available payment methods, and credit tiers (if toll-booth server). The challenge is cached so a subsequent l402-pay can reuse it.',
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The URL to probe for L402 pricing'),
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).optional().default('GET').describe('HTTP method to use'),

@@ -41,12 +41,13 @@ export function handleBalance(args: { origin: string }, store: CredentialStore) 
   }
 }
 
-/** Registers the l402_balance tool with the MCP server. */
+/** Registers the l402-balance tool with the MCP server. */
 export function registerBalanceTool(server: McpServer, store: CredentialStore): void {
   server.registerTool(
-    'l402_balance',
+    'l402-balance',
     {
       description: 'Check cached credit balance for a server. Returns the last known balance from the credential store without making a network request. The "stale" flag is true if the balance was last updated more than 5 minutes ago.',
+      annotations: { readOnlyHint: true },
       inputSchema: {
         origin: z.url().describe('The server origin (e.g. https://api.example.com)'),
       },

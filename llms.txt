@@ -4,7 +4,7 @@
 
 402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payment rails are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
 
-Agents can also discover paid APIs without knowing URLs upfront. The `l402_search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — enabling censorship-resistant API access without any client-side configuration.
+Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — enabling censorship-resistant API access without any client-side configuration.
 
 ## Getting Started
 
@@ -68,43 +68,43 @@ Add to your MCP configuration:
 
 These tools work with any L402-compliant server.
 
-### `l402_config`
+### `l402-config`
 
 Introspect the agent's payment capabilities and current configuration. Returns wallet status (NWC connected, Cashu tokens loaded), the `MAX_AUTO_PAY_SATS` limit, and the number of stored credentials. Call this first so the agent knows what it can do autonomously.
 
-### `l402_discover`
+### `l402-discover`
 
 Probe an endpoint to discover its pricing without making a payment. Returns the invoice amount in satoshis, the macaroon challenge, and whether the server is a toll-booth instance (which enables extension tools). Use this before committing to a purchase so the agent can reason about value.
 
-### `l402_fetch`
+### `l402-fetch`
 
 Make an HTTP request to an L402-protected endpoint. Handles the full payment flow automatically: detects 402 responses, pays the invoice if the amount is within the `MAX_AUTO_PAY_SATS` budget and the rolling spend cap, stores the credential, and retries the request. Returns the response body on success. This is the primary tool for consuming L402 APIs.
 
-### `l402_pay`
+### `l402-pay`
 
-Pay a specific Lightning invoice directly. Tries payment methods in priority order: NWC, Cashu, human-in-the-loop. Use this when you have an invoice from a source other than `l402_fetch`, or when you want explicit control over the payment step.
+Pay a specific Lightning invoice directly. Tries payment methods in priority order: NWC, Cashu, human-in-the-loop. Use this when you have an invoice from a source other than `l402-fetch`, or when you want explicit control over the payment step.
 
-### `l402_credentials`
+### `l402-credentials`
 
 List all stored L402 credentials and their cached credit balances. Shows which servers the agent has already paid and what capacity remains. Useful for auditing spend and avoiding redundant payments.
 
-### `l402_balance`
+### `l402-balance`
 
-Check the cached credit balance for a specific server URL. Returns the number of credits remaining without making a network request. Use this before calling `l402_fetch` to confirm there is sufficient balance before consuming credits.
+Check the cached credit balance for a specific server URL. Returns the number of credits remaining without making a network request. Use this before calling `l402-fetch` to confirm there is sufficient balance before consuming credits.
 
-### `l402_search`
+### `l402-search`
 
-Search for L402 services on Nostr relays. Queries kind 31402 announcement events and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402_fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront — a decentralised alternative to API directories.
+Search for L402 services on Nostr relays. Queries kind 31402 announcement events and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402-fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront — a decentralised alternative to API directories.
 
 ## toll-booth Extension Tools
 
-These tools activate automatically when the target server is a toll-booth instance (detected via `l402_discover`).
+These tools activate automatically when the target server is a toll-booth instance (detected via `l402-discover`).
 
-### `l402_buy_credits`
+### `l402-buy-credits`
 
 Browse and purchase volume discount credit tiers offered by the server. toll-booth servers can expose multiple tiers (e.g. 100 sats for 110 credits, 500 sats for 555 credits). The agent can inspect the tiers, reason about how many requests it needs, and buy the best-value tier upfront rather than paying per-request.
 
-### `l402_redeem_cashu`
+### `l402-redeem-cashu`
 
 Redeem Cashu ecash tokens directly with the toll-booth server, bypassing the Lightning round-trip. toll-booth accepts raw ecash tokens and credits the balance immediately. This is faster and cheaper than melting tokens to pay a Lightning invoice when both sides support Cashu.
 
@@ -147,6 +147,6 @@ https://github.com/forgesworn/toll-booth
 
 https://github.com/forgesworn/satgate
 
-**402-announce** publishes HTTP 402 services on Nostr as kind 31402 events, making them discoverable by `l402_search`. Operators run it alongside their L402 server to announce capabilities, pricing, and payment methods to the decentralised network.
+**402-announce** publishes HTTP 402 services on Nostr as kind 31402 events, making them discoverable by `l402-search`. Operators run it alongside their L402 server to announce capabilities, pricing, and payment methods to the decentralised network.
 
 https://github.com/forgesworn/402-announce

@@ -53,14 +53,14 @@ sequenceDiagram
     participant API as L402 API
     participant Wallet as Wallet (NWC/Cashu)
 
-    Agent->>MCP: l402_discover(url)
+    Agent->>MCP: l402-discover(url)
     MCP->>API: GET /endpoint
     API-->>MCP: 402 + invoice + macaroon
     MCP-->>Agent: price: 10 sats, server: toll-booth
 
     Agent->>Agent: Reason about pricing
 
-    Agent->>MCP: l402_fetch(url)
+    Agent->>MCP: l402-fetch(url)
     MCP->>API: GET /endpoint
     API-->>MCP: 402 + invoice + macaroon
     MCP->>MCP: Amount ≤ MAX_AUTO_PAY_SATS?
@@ -74,7 +74,7 @@ sequenceDiagram
 
 ## Service discovery
 
-Agents discover paid APIs without knowing URLs upfront. `l402_search` queries Nostr relays for kind 31402 service announcements — the decentralised registry for L402 services.
+Agents discover paid APIs without knowing URLs upfront. `l402-search` queries Nostr relays for kind 31402 service announcements — the decentralised registry for L402 services.
 
 ```mermaid
 sequenceDiagram
@@ -82,11 +82,11 @@ sequenceDiagram
     participant MCP as 402-mcp
     participant Relay as Nostr Relays
 
-    Agent->>MCP: l402_search("routing")
+    Agent->>MCP: l402-search("routing")
     MCP->>Relay: Subscribe kind 31402
     Relay-->>MCP: Matching service events
     MCP-->>Agent: Services with URLs, pricing, capabilities
-    Agent->>MCP: l402_discover(service_url)
+    Agent->>MCP: l402-discover(service_url)
     Note over Agent: Continue with payment flow...
 ```
 

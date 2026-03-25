@@ -192,12 +192,13 @@ export async function handleRedeemCashu(
   }
 }
 
-/** Registers the l402_redeem_cashu tool with the MCP server. */
+/** Registers the l402-redeem-cashu tool with the MCP server. */
 export function registerRedeemCashuTool(server: McpServer, deps: RedeemCashuDeps): void {
   server.registerTool(
-    'l402_redeem_cashu',
+    'l402-redeem-cashu',
     {
       description: 'Redeem Cashu ecash tokens directly on a toll-booth server, avoiding the Lightning round-trip. Handles the two-step flow automatically (create invoice then redeem token). Only works with toll-booth servers.',
+      annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The toll-booth server URL'),
         token: z.string().max(20_000).describe('Cashu token string to redeem (e.g. cashuAey...)'),

@@ -18,15 +18,16 @@ export function handleConfig(state: ConfigState) {
   }
 }
 
-/** Registers the l402_config tool with the MCP server. */
+/** Registers the l402-config tool with the MCP server. */
 export function registerConfigTool(
   server: McpServer,
   getState: () => ConfigState,
 ): void {
   server.registerTool(
-    'l402_config',
+    'l402-config',
     {
       description: 'Introspect the MCP\'s payment capabilities: which wallets are configured, spending limits, and stored credential count. Call this first to understand what payment methods are available.',
+      annotations: { readOnlyHint: true },
       inputSchema: {},
     },
     () => handleConfig(getState()),

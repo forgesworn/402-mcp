@@ -7,16 +7,16 @@ body:
     attributes:
       label: Which tool?
       options:
-        - l402_config
-        - l402_discover
-        - l402_fetch
-        - l402_pay
-        - l402_credentials
-        - l402_balance
-        - l402_search
-        - l402_buy_credits
-        - l402_redeem_cashu
-        - l402_store_token
+        - l402-config
+        - l402-discover
+        - l402-fetch
+        - l402-pay
+        - l402-credentials
+        - l402-balance
+        - l402-search
+        - l402-buy-credits
+        - l402-redeem-cashu
+        - l402-store-token
         - Other / not sure
     validations:
       required: true

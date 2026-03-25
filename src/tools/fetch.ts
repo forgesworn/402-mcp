@@ -69,7 +69,7 @@ export async function handleFetch(
   args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string },
   deps: FetchDeps,
 ) {
-  // When multiple URLs are provided (from l402_search results), use transport fallback.
+  // When multiple URLs are provided (from l402-search results), use transport fallback.
   // The first URL in `urls` is also the primary URL for identity, origin, and payment.
   const primaryUrl = args.urls?.length ? args.urls[0] : args.url
   const origin = new URL(primaryUrl).origin
@@ -332,7 +332,7 @@ export async function handleFetch(
                 paymentHash: decoded.paymentHash,
                 paymentUrl: fullPaymentUrl,
                 ...(tiers ? { tiers } : {}),
-                message: `Payment required: ${decoded.costSats} sats. Open the URL to pay, then call l402_pay with paymentHash "${decoded.paymentHash}" to confirm and retry.`,
+                message: `Payment required: ${decoded.costSats} sats. Open the URL to pay, then call l402-pay with paymentHash "${decoded.paymentHash}" to confirm and retry.`,
               }, null, 2),
             }],
           }
@@ -354,7 +354,7 @@ export async function handleFetch(
           costSats: decoded.costSats,
           invoice: challenge.invoice,
           paymentHash: decoded.paymentHash,
-          message: `Payment required: ${decoded.costSats} sats. Scan the QR to pay, then call l402_pay with paymentHash "${decoded.paymentHash}" to confirm and retry.`,
+          message: `Payment required: ${decoded.costSats} sats. Scan the QR to pay, then call l402-pay with paymentHash "${decoded.paymentHash}" to confirm and retry.`,
         }, null, 2)
 
         // Combine QR + JSON in one text block so terminals render the QR with newlines
@@ -439,7 +439,7 @@ export async function handleFetch(
 
     // Step 5: Return 402 challenge for agent decision
     const message = creditsExhausted
-      ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402_buy_credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
+      ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402-buy-credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
       : !autoPay
         ? `Payment of ${decoded.costSats} sats required. autoPay disabled.`
         : decoded.costSats !== null && decoded.costSats > deps.maxAutoPaySats
@@ -472,20 +472,21 @@ export async function handleFetch(
   }
 }
 
-/** Registers the l402_fetch tool with the MCP server. */
+/** Registers the l402-fetch tool with the MCP server. */
 export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
-    'l402_fetch',
+    'l402-fetch',
     {
-      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402_buy_credits to purchase their chosen tier.',
+      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier.',
+      annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),
-        urls: z.array(z.url()).max(10).optional().describe('All transport URLs from l402_search results (clearnet, onion, HNS). When present, transports are tried in preference order with automatic fallback on connection failure.'),
+        urls: z.array(z.url()).max(10).optional().describe('All transport URLs from l402-search results (clearnet, onion, HNS). When present, transports are tried in preference order with automatic fallback on connection failure.'),
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).optional().default('GET').describe('HTTP method'),
         headers: z.record(z.string().max(1000), z.string().max(8000)).optional().describe('Additional request headers'),
         body: z.string().max(1_000_000).optional().describe('Request body (for POST/PUT)'),
         autoPay: z.boolean().optional().default(false).describe('Automatically pay if within MAX_AUTO_PAY_SATS budget'),
-        pubkey: z.string().max(128).optional().describe('Service pubkey from l402_search results — used to share credentials across all transport URLs for the same service'),
+        pubkey: z.string().max(128).optional().describe('Service pubkey from l402-search results — used to share credentials across all transport URLs for the same service'),
         txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional().describe('Transaction hash from a completed x402 on-chain payment. When provided, retries the request with X-Payment header for server verification.'),
       },
     },

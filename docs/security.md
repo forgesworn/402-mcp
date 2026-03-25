@@ -87,7 +87,7 @@ All outbound HTTP uses the resilient fetch wrapper (`src/fetch/resilient-fetch.t
 
 - **Preimage hex validation** — preimages are validated as strict hex before storage (see Credential encryption above).
 - **Macaroon base64 validation** — macaroons are validated against a base64-safe character set before storage.
-- **Blocked hop-by-hop headers** — user-supplied headers on `l402_fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
+- **Blocked hop-by-hop headers** — user-supplied headers on `l402-fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
 - **Zod schema validation** — all MCP tool inputs are validated with Zod schemas at the tool registration layer, rejecting malformed or unexpected input before any handler logic executes.
 - **Path traversal prevention** — `CREDENTIAL_STORE` and `CASHU_TOKENS` paths are validated to ensure they resolve within the user's home directory.
 - **NWC URI scrubbing** — the `NWC_URI` environment variable is deleted from `process.env` immediately after reading to prevent accidental exposure via process inspection or child processes.

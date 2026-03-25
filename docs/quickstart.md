@@ -53,11 +53,11 @@ Add the same JSON block to your Cursor MCP configuration. See [Cursor MCP docs](
 
 Ask your AI agent:
 
-> "Search for paid joke APIs using l402_search"
+> "Search for paid joke APIs using l402-search"
 
 The agent will query Nostr relays for kind 31402 service announcements and return a list of live paid APIs — URLs, pricing, and capabilities. No wallet, no cost. This is just discovery.
 
-Try other searches too — `l402_search("AI inference")` will find [satgate](https://github.com/forgesworn/satgate) (pay-per-token AI inference) and any other services announcing on Nostr.
+Try other searches too — `l402-search("AI inference")` will find [satgate](https://github.com/forgesworn/satgate) (pay-per-token AI inference) and any other services announcing on Nostr.
 
 ## 4. Set up a wallet
 
@@ -129,8 +129,8 @@ Now ask your agent:
 Watch what happens:
 
 1. The agent discovers the endpoint and its pricing
-2. It checks your spend limits via `l402_config`
-3. It calls `l402_fetch` — 402-mcp pays the invoice automatically (or shows you a QR)
+2. It checks your spend limits via `l402-config`
+3. It calls `l402-fetch` — 402-mcp pays the invoice automatically (or shows you a QR)
 4. The joke comes back, and the credential is cached for future requests
 
 That's it. Your AI agent just paid for an API call autonomously.
@@ -145,8 +145,8 @@ That's it. Your AI agent just paid for an API call autonomously.
 
 ## Troubleshooting
 
-**Service unavailable?** Use `l402_search` to find other live services — the Nostr relay network has a growing catalogue.
+**Service unavailable?** Use `l402-search` to find other live services — the Nostr relay network has a growing catalogue.
 
-**Payment failed?** Check your wallet balance and that your NWC URI is correct. Try `l402_config` to verify your payment methods are detected.
+**Payment failed?** Check your wallet balance and that your NWC URI is correct. Try `l402-config` to verify your payment methods are detected.
 
-**Want to see what's stored?** Use `l402_credentials` to list cached credentials and `l402_balance` to check remaining credits.
+**Want to see what's stored?** Use `l402-credentials` to list cached credentials and `l402-balance` to check remaining credits.

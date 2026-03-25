@@ -110,7 +110,7 @@ export async function handleBuyCredits(
       }
     }
 
-    // Per-request cap — consistent with l402_fetch and l402_redeem_cashu.
+    // Per-request cap — consistent with l402-fetch and l402-redeem-cashu.
     // Skip for human wallet: the user approves manually via QR, so the auto-pay cap
     // should not block their explicit choice to buy a larger tier.
     const effectiveMethod = args.method ?? deps.walletMethod()
@@ -179,7 +179,7 @@ export async function handleBuyCredits(
         invoice,
         paymentHash: decoded.paymentHash,
         costSats: args.amountSats,
-        message: `Scan QR to pay ${args.amountSats} sats. After payment, call l402_pay with the paymentHash.`,
+        message: `Scan QR to pay ${args.amountSats} sats. After payment, call l402-pay with the paymentHash.`,
       }, null, 2)
 
       // Combine QR + JSON in one text block so terminals render the QR with newlines
@@ -217,12 +217,13 @@ export async function handleBuyCredits(
   }
 }
 
-/** Registers the l402_buy_credits tool with the MCP server. */
+/** Registers the l402-buy-credits tool with the MCP server. */
 export function registerBuyCreditsTool(server: McpServer, deps: BuyCreditsDeps): void {
   server.registerTool(
-    'l402_buy_credits',
+    'l402-buy-credits',
     {
       description: 'Buy credits from a toll-booth server with volume discounts. Omit amountSats to discover available tiers. Provide amountSats to purchase a specific tier. Only works with toll-booth servers.',
+      annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The toll-booth server URL'),
         amountSats: z.number().int().positive().optional().describe('Amount in sats to purchase. Omit to list available tiers.'),

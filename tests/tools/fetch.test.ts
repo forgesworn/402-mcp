@@ -344,14 +344,14 @@ describe('handleFetch', () => {
     expect(parsed.invoice).toBe('lnbc210n1test')
     expect(parsed.paymentHash).toBe('a'.repeat(64))
     expect(parsed.message).toContain('Payment required')
-    expect(parsed.message).toContain('l402_pay')
+    expect(parsed.message).toContain('l402-pay')
 
     // Image should be raw base64 (no data URI prefix)
     const img = result.content[1] as { type: 'image'; data: string; mimeType: string }
     expect(img.data).toBe('QRDATA')
     expect(img.mimeType).toBe('image/png')
 
-    // Challenge should be cached for l402_pay
+    // Challenge should be cached for l402-pay
     expect(deps.challengeCache.get('a'.repeat(64))).toBeDefined()
 
     // payInvoice should NOT have been called — human wallet returns immediately

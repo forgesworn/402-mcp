@@ -63,12 +63,13 @@ export function handleStoreToken(
   }
 }
 
-/** Registers the l402_store_token tool with the MCP server. */
+/** Registers the l402-store-token tool with the MCP server. */
 export function registerStoreTokenTool(server: McpServer, deps: StoreTokenDeps): void {
   server.registerTool(
-    'l402_store_token',
+    'l402-store-token',
     {
-      description: 'Store an L402 token (macaroon:preimage) obtained from a payment page. Use this when a user pastes back a token from a toll-booth payment page. The token is stored as a credential so subsequent l402_fetch calls are authenticated.',
+      description: 'Store an L402 token (macaroon:preimage) obtained from a payment page. Use this when a user pastes back a token from a toll-booth payment page. The token is stored as a credential so subsequent l402-fetch calls are authenticated.',
+      annotations: { readOnlyHint: false, idempotentHint: true },
       inputSchema: {
         url: z.url().describe('The service URL this token is for'),
         token: z.string().min(10).max(30_000).describe('The L402 token in macaroon:preimage format'),

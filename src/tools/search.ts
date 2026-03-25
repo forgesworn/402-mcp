@@ -146,12 +146,13 @@ export async function handleSearch(
   }
 }
 
-/** Registers the l402_search tool with the MCP server. */
+/** Registers the l402-search tool with the MCP server. */
 export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
   server.registerTool(
-    'l402_search',
+    'l402-search',
     {
-      description: 'Search for paid APIs and services. Use this when the user wants something that might be available as a paid service — jokes, data, AI, content, etc. Discovers services announced on Nostr and returns their URLs, pricing, and capabilities. Then use l402_fetch with the URL to access the service.',
+      description: 'Search for paid APIs and services. Use this when the user wants something that might be available as a paid service — jokes, data, AI, content, etc. Discovers services announced on Nostr and returns their URLs, pricing, and capabilities. Then use l402-fetch with the URL to access the service.',
+      annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         query: z.string().max(200).describe('Search query to match against service names, descriptions, and capabilities'),
         relays: z.array(z.url()).max(10).optional().describe('Nostr relay URLs to query (defaults to popular public relays)'),
