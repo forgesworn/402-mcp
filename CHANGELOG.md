@@ -1,3 +1,11 @@
+# [3.14.0](https://github.com/forgesworn/402-mcp/compare/v3.13.2...v3.14.0) (2026-03-25)
+
+
+### Features
+
+* add IETF Payment client support (draft-ryan-httpauth-payment-01) ([e013f41](https://github.com/forgesworn/402-mcp/commit/e013f41ce828737b0ffe1f8c1f0aa77c719b7815))
+* add MCP instructions, tool annotations, and kebab-case tool names ([4f8130e](https://github.com/forgesworn/402-mcp/commit/4f8130e180fd193b2adb18a9255b31aa00892a72))
+
 ## [3.13.2](https://github.com/forgesworn/402-mcp/compare/v3.13.1...v3.13.2) (2026-03-20)
 
 
