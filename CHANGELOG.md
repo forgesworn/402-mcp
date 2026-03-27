@@ -1,3 +1,10 @@
+# [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
+
+
+### Features
+
+* add l402-fetch-preview tool and MCP app widgets ([20455a5](https://github.com/forgesworn/402-mcp/commit/20455a580ee231a8884291b1643ea6c41ddd84b8))
+
 # [3.14.0](https://github.com/forgesworn/402-mcp/compare/v3.13.2...v3.14.0) (2026-03-25)
 
 
