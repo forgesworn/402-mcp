@@ -477,7 +477,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402-fetch',
     {
-      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier.',
+      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier. For widget hosts, call l402-fetch-preview first to show a payment confirmation dialog before spending.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),

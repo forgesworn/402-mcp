@@ -1,0 +1,165 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --ink: #0f1111; --bg: #fff; --accent: #22c55e; --accent-hover: #16a34a;
+    --danger: #ef4444; --danger-hover: #dc2626; --muted: #6b7280;
+    --card-bg: #f8f9fa; --border: #e0e0e0;
+    color-scheme: light;
+  }
+  :root.dark {
+    --ink: #e6e6e6; --bg: #1a1a2e; --accent: #4ade80; --accent-hover: #22c55e;
+    --danger: #f87171; --danger-hover: #ef4444; --muted: #9ca3af;
+    --card-bg: #252540; --border: #3a3a5a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font: 16px/1.5 system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 20px; min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 12px; padding: 28px; max-width: 420px; width: 100%;
+    text-align: center;
+  }
+  .protocol-badge {
+    display: inline-block; font: 700 11px/1 monospace;
+    text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 4px 10px; border-radius: 4px;
+    background: var(--accent); color: #fff; margin-bottom: 12px;
+  }
+  .endpoint {
+    font-size: 24px; font-weight: 700; word-break: break-all;
+    margin-bottom: 8px;
+  }
+  .cost {
+    font-size: 36px; font-weight: 800; color: var(--accent);
+    margin: 16px 0 4px;
+  }
+  .cost-label { font-size: 14px; color: var(--muted); }
+  .wallet-badge {
+    display: inline-block; font: 600 12px/1 system-ui;
+    padding: 4px 10px; border-radius: 4px;
+    background: var(--border); color: var(--ink); margin-top: 12px;
+  }
+  .message {
+    font-size: 14px; color: var(--muted); margin-top: 16px;
+    line-height: 1.6;
+  }
+  .actions { display: flex; gap: 12px; margin-top: 24px; }
+  .btn {
+    flex: 1; padding: 14px 20px; border: none; border-radius: 8px;
+    font: 700 16px/1 system-ui; cursor: pointer; transition: background 0.15s;
+  }
+  .btn-confirm {
+    background: var(--accent); color: #fff;
+  }
+  .btn-confirm:hover { background: var(--accent-hover); }
+  .btn-cancel {
+    background: var(--border); color: var(--ink);
+  }
+  .btn-cancel:hover { background: var(--danger); color: #fff; }
+  .info-text {
+    font-size: 15px; color: var(--ink); text-align: center;
+    padding: 40px 20px;
+  }
+</style>
+<div id="root">
+  <div class="info-text">Waiting for preview data...</div>
+</div>
+<script type="module">
+/*__EXT_APPS_BUNDLE__*/
+const { App } = globalThis.ExtApps;
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (k === "className") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === "string") e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
+  return e;
+}
+
+(async () => {
+  const app = new App({ name: "PaymentConfirmation", version: "1.0.0" }, {});
+  const root = document.getElementById("root");
+
+  const applyTheme = (t) => document.documentElement.classList.toggle("dark", t === "dark");
+  app.onhostcontextchanged = (ctx) => applyTheme(ctx.theme);
+
+  app.ontoolresult = ({ content }) => {
+    try {
+      const data = JSON.parse(content[0].text);
+      render(data);
+    } catch {
+      showMessage("Unable to parse preview data.");
+    }
+  };
+
+  await app.connect();
+  applyTheme(app.getHostContext()?.theme);
+
+  function showMessage(text) {
+    root.replaceChildren(el("div", { className: "info-text" }, text));
+  }
+
+  function render(data) {
+    const item = Array.isArray(data) ? data[0] : data;
+    if (!item) { showMessage("No data received."); return; }
+    if (item.status === "free") { showMessage(item.message || "No payment required."); return; }
+    if (item.status === "error") { showMessage(item.message || "An error occurred."); return; }
+    if (item.status !== "preview") { showMessage(item.message || JSON.stringify(item)); return; }
+
+    let hostname;
+    try { hostname = new URL(item.endpoint).hostname; } catch { hostname = item.endpoint; }
+
+    const isOnChain = item.protocol === "x402";
+    const costDisplay = isOnChain
+      ? "$" + (item.costUsd?.toFixed(2) ?? "?") + " " + (item.asset?.toUpperCase() ?? "")
+      : (item.costSats ?? "?") + " sats";
+    const costLabel = isOnChain ? (item.network ?? "on-chain") : "Lightning";
+
+    const walletBadge = item.paymentMethod && item.paymentMethod !== "none"
+      ? el("span", { className: "wallet-badge" }, item.paymentMethod)
+      : null;
+
+    const card = el("div", { className: "card" },
+      el("span", { className: "protocol-badge" }, item.protocol),
+      el("div", { className: "endpoint" }, hostname),
+      el("div", { className: "cost" }, costDisplay),
+      el("div", { className: "cost-label" }, costLabel),
+      walletBadge,
+      el("div", { className: "message" }, item.message),
+      el("div", { className: "actions" },
+        el("button", {
+          className: "btn btn-confirm",
+          onClick: () => {
+            const confirmText = item.paymentHash
+              ? "Confirmed: pay " + costDisplay + " to " + item.endpoint + " (paymentHash: " + item.paymentHash + ")"
+              : "Confirmed: pay " + costDisplay + " to " + item.endpoint;
+            app.sendMessage({ role: "user", content: [{ type: "text", text: confirmText }] });
+            showMessage("Payment request sent. Waiting for confirmation...");
+          },
+        }, "Pay " + costDisplay),
+        el("button", {
+          className: "btn btn-cancel",
+          onClick: () => {
+            app.sendMessage({ role: "user", content: [{ type: "text", text: "Cancelled payment to " + item.endpoint }] });
+            showMessage("Payment cancelled.");
+          },
+        }, "Cancel"),
+      ),
+    );
+
+    root.replaceChildren(card);
+  }
+})();
+</script>

@@ -1,5 +1,6 @@
 build/
 coverage/
+src/widgets/dist/
 node_modules/
 *.tgz
 .402-mcp/

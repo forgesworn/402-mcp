@@ -24,6 +24,7 @@ import { registerBalanceTool } from './tools/balance.js'
 import { registerBuyCreditsTool } from './tools/buy-credits.js'
 import { registerRedeemCashuTool } from './tools/redeem-cashu.js'
 import { registerSearchTool } from './tools/search.js'
+import { registerFetchPreviewTool } from './tools/fetch-preview.js'
 import { createNostrSubscriber } from './tools/nostr-subscribe.js'
 import { isX402Challenge, parseX402Challenge } from './x402/parse.js'
 import { formatX402PaymentRequest } from './x402/payment.js'
@@ -256,6 +257,29 @@ registerRedeemCashuTool(server, {
 })
 
 registerSearchTool(server, { subscribeEvents: createNostrSubscriber(config.ssrfAllowPrivate) })
+
+// Register fetch-preview (read-only, no spend capability)
+registerFetchPreviewTool(server, {
+  fetchFn: resilientFetch,
+  challengeCache,
+  decodeBolt11,
+  parseL402: parseL402Challenge,
+  isX402: isX402Challenge,
+  parseX402: parseX402Challenge,
+  isXCashu: isXCashuChallenge,
+  parseXCashu: parseXCashuChallenge,
+  isIETFPayment: isIETFPaymentChallenge,
+  parseIETFPayment: parseIETFPaymentChallenge,
+  walletMethod: () => getWallet()?.method,
+})
+
+// Widget registration (graceful if widgets not built)
+try {
+  const { registerWidgets } = await import('./tools/register-widgets.js')
+  registerWidgets(server)
+} catch (e) {
+  console.error('Widget registration skipped (build widgets first):', (e as Error).message)
+}
 
 // Start transport
 if (config.transport === 'http') {

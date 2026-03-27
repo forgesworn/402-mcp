@@ -1,0 +1,199 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --ink: #0f1111; --bg: #fff; --accent: #22c55e;
+    --muted: #6b7280; --card-bg: #f8f9fa; --border: #e0e0e0;
+    --success: #22c55e; --warn: #f59e0b;
+    color-scheme: light;
+  }
+  :root.dark {
+    --ink: #e6e6e6; --bg: #1a1a2e; --accent: #4ade80;
+    --muted: #9ca3af; --card-bg: #252540; --border: #3a3a5a;
+    --success: #4ade80; --warn: #fbbf24;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font: 16px/1.5 system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 16px;
+  }
+  .dashboard { max-width: 500px; margin: 0 auto; }
+  .header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .title { font-size: 22px; font-weight: 700; }
+  .refresh-btn {
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--card-bg); color: var(--ink);
+    font: 600 13px/1 system-ui; cursor: pointer;
+  }
+  .refresh-btn:hover { border-color: var(--accent); }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+  .stat-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 14px;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat-value.positive { color: var(--success); }
+  .indicator {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-right: 6px;
+  }
+  .indicator.connected { background: var(--success); }
+  .indicator.disconnected { background: var(--warn); }
+  .section-title {
+    font-size: 14px; font-weight: 700; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 0.05em;
+    margin: 20px 0 10px;
+  }
+  .cred-list { display: flex; flex-direction: column; gap: 8px; }
+  .cred-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .cred-origin { font-size: 14px; font-weight: 600; }
+  .cred-meta { font-size: 12px; color: var(--muted); }
+  .stale-badge {
+    font: 600 10px/1 monospace; text-transform: uppercase;
+    padding: 2px 6px; border-radius: 3px;
+    background: var(--warn); color: #fff;
+  }
+  .status-text {
+    font-size: 14px; color: var(--muted); text-align: center;
+    padding: 32px 16px;
+  }
+  .empty-text {
+    font-size: 13px; color: var(--muted); text-align: center;
+    padding: 16px;
+  }
+</style>
+<div id="root">
+  <div class="status-text">Loading wallet...</div>
+</div>
+<script type="module">
+/*__EXT_APPS_BUNDLE__*/
+const { App } = globalThis.ExtApps;
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (k === "className") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === "string") e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
+  return e;
+}
+
+(async () => {
+  const app = new App({ name: "WalletDashboard", version: "1.0.0" }, {});
+  const root = document.getElementById("root");
+
+  const applyTheme = (t) => document.documentElement.classList.toggle("dark", t === "dark");
+  app.onhostcontextchanged = (ctx) => applyTheme(ctx.theme);
+
+  await app.connect();
+  applyTheme(app.getHostContext()?.theme);
+
+  function showStatus(text) {
+    root.replaceChildren(el("div", { className: "status-text" }, text));
+  }
+
+  function isStale(lastUsed) {
+    if (!lastUsed) return true;
+    const age = Date.now() - new Date(lastUsed).getTime();
+    return age > 24 * 60 * 60 * 1000; // Older than 24 hours
+  }
+
+  function renderDashboard(config, credentials) {
+    const creds = credentials?.credentials ?? [];
+
+    const dashboard = el("div", { className: "dashboard" },
+      el("div", { className: "header" },
+        el("div", { className: "title" }, "Wallet"),
+        el("button", { className: "refresh-btn", onClick: () => loadData() }, "Refresh"),
+      ),
+      el("div", { className: "stats" },
+        el("div", { className: "stat-card" },
+          el("div", { className: "stat-label" }, "NWC"),
+          el("div", { className: "stat-value" },
+            el("span", { className: "indicator " + (config.nwcConfigured ? "connected" : "disconnected") }),
+            config.nwcConfigured ? "Connected" : "Not set",
+          ),
+        ),
+        el("div", { className: "stat-card" },
+          el("div", { className: "stat-label" }, "Cashu Balance"),
+          el("div", { className: "stat-value positive" },
+            config.cashuConfigured ? config.cashuBalanceSats + " sats" : "N/A",
+          ),
+        ),
+        el("div", { className: "stat-card" },
+          el("div", { className: "stat-label" }, "Credentials"),
+          el("div", { className: "stat-value" }, String(config.credentialCount ?? 0)),
+        ),
+        el("div", { className: "stat-card" },
+          el("div", { className: "stat-label" }, "Auto-pay Limit"),
+          el("div", { className: "stat-value" }, (config.maxAutoPaySats ?? 0) + " sats"),
+        ),
+      ),
+    );
+
+    const credSection = el("div", null,
+      el("div", { className: "section-title" }, "Stored Credentials"),
+    );
+
+    if (!creds.length) {
+      credSection.appendChild(el("div", { className: "empty-text" }, "No stored credentials."));
+    } else {
+      const list = el("div", { className: "cred-list" });
+      for (const c of creds) {
+        const origin = c.origin || c.key || "unknown";
+        const stale = isStale(c.lastUsed);
+        const rightSide = el("div", { style: "text-align:right" });
+        if (c.creditBalance != null) {
+          rightSide.appendChild(el("div", { className: "cred-meta" }, c.creditBalance + " credits"));
+        }
+        if (stale) {
+          rightSide.appendChild(el("span", { className: "stale-badge" }, "stale"));
+        }
+        list.appendChild(el("div", { className: "cred-card" },
+          el("div", null,
+            el("div", { className: "cred-origin" }, origin),
+            c.lastUsed ? el("div", { className: "cred-meta" }, "Last used: " + new Date(c.lastUsed).toLocaleDateString()) : null,
+          ),
+          rightSide,
+        ));
+      }
+      credSection.appendChild(list);
+    }
+
+    dashboard.appendChild(credSection);
+    root.replaceChildren(dashboard);
+  }
+
+  async function loadData() {
+    showStatus("Loading wallet data...");
+    try {
+      const [configResult, credsResult] = await Promise.all([
+        app.callServerTool("l402-config", {}),
+        app.callServerTool("l402-credentials", {}),
+      ]);
+      const config = JSON.parse(configResult.content[0].text);
+      const credentials = JSON.parse(credsResult.content[0].text);
+      renderDashboard(config, credentials);
+    } catch (err) {
+      showStatus("Failed to load wallet data: " + (err.message || "unknown error"));
+    }
+  }
+
+  loadData();
+})();
+</script>

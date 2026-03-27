@@ -17,7 +17,8 @@
     "./spend-tracker": "./build/spend-tracker.js"
   },
   "scripts": {
-    "build": "tsc",
+    "build:widgets": "node src/widgets/build.mjs",
+    "build": "npm run build:widgets && tsc",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -30,6 +31,7 @@
   },
   "dependencies": {
     "@cashu/cashu-ts": "^3.6.1",
+    "@modelcontextprotocol/ext-apps": "^1.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "bolt11": "^1.4.1",
     "cors": "^2.8.5",
@@ -89,6 +91,7 @@
   },
   "files": [
     "build",
+    "src/widgets/dist",
     "LICENSE",
     "README.md",
     "llms.txt",

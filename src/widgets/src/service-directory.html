@@ -1,0 +1,157 @@
+<!doctype html>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --ink: #0f1111; --bg: #fff; --accent: #22c55e; --accent-hover: #16a34a;
+    --muted: #6b7280; --card-bg: #f8f9fa; --border: #e0e0e0;
+    color-scheme: light;
+  }
+  :root.dark {
+    --ink: #e6e6e6; --bg: #1a1a2e; --accent: #4ade80; --accent-hover: #22c55e;
+    --muted: #9ca3af; --card-bg: #252540; --border: #3a3a5a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font: 16px/1.5 system-ui, -apple-system, sans-serif;
+    background: var(--bg); color: var(--ink);
+    padding: 16px;
+  }
+  .search-box {
+    width: 100%; padding: 14px 16px; font-size: 16px;
+    border: 2px solid var(--border); border-radius: 8px;
+    background: var(--card-bg); color: var(--ink);
+    outline: none; margin-bottom: 16px;
+  }
+  .search-box:focus { border-color: var(--accent); }
+  .search-box::placeholder { color: var(--muted); }
+  .service-list { display: flex; flex-direction: column; gap: 10px; }
+  .service-card {
+    background: var(--card-bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 16px; cursor: pointer;
+    transition: border-color 0.15s;
+  }
+  .service-card:hover { border-color: var(--accent); }
+  .service-name { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .service-desc { font-size: 14px; color: var(--muted); margin-bottom: 8px; line-height: 1.5; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-block; font: 600 11px/1 monospace;
+    text-transform: uppercase; letter-spacing: 0.04em;
+    padding: 3px 8px; border-radius: 4px;
+    background: var(--border); color: var(--ink);
+  }
+  .chip-price { background: var(--accent); color: #fff; }
+  .status-text {
+    font-size: 14px; color: var(--muted); text-align: center;
+    padding: 32px 16px;
+  }
+  .count-text { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+</style>
+<div id="root">
+  <div class="status-text">Loading services...</div>
+</div>
+<script type="module">
+/*__EXT_APPS_BUNDLE__*/
+const { App } = globalThis.ExtApps;
+
+function el(tag, attrs, ...children) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (k === "className") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2).toLowerCase(), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children) {
+    if (typeof c === "string") e.appendChild(document.createTextNode(c));
+    else if (c) e.appendChild(c);
+  }
+  return e;
+}
+
+(async () => {
+  const app = new App({ name: "ServiceDirectory", version: "1.0.0" }, {});
+  const root = document.getElementById("root");
+  let debounceTimer = null;
+
+  const applyTheme = (t) => document.documentElement.classList.toggle("dark", t === "dark");
+  app.onhostcontextchanged = (ctx) => applyTheme(ctx.theme);
+
+  await app.connect();
+  applyTheme(app.getHostContext()?.theme);
+
+  function showStatus(text) {
+    root.replaceChildren(el("div", { className: "status-text" }, text));
+  }
+
+  function renderServices(services, query) {
+    const searchInput = el("input", {
+      className: "search-box",
+      type: "text",
+      placeholder: "Search services...",
+    });
+    searchInput.value = query || "";
+    searchInput.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => doSearch(searchInput.value), 300);
+    });
+
+    const list = el("div", { className: "service-list" });
+
+    if (!services.length) {
+      list.appendChild(el("div", { className: "status-text" },
+        query ? "No services found for \"" + query + "\"." : "No services found."));
+    }
+
+    for (const svc of services) {
+      const chips = el("div", { className: "chips" });
+      if (svc.pricing) {
+        for (const p of svc.pricing) {
+          chips.appendChild(el("span", { className: "chip chip-price" },
+            p.amount + " " + p.unit + (p.capability ? " / " + p.capability : "")));
+        }
+      }
+      if (svc.paymentMethods) {
+        for (const pm of svc.paymentMethods) {
+          chips.appendChild(el("span", { className: "chip" }, pm));
+        }
+      }
+
+      const url = svc.urls?.[0] ?? "";
+      const card = el("div", {
+        className: "service-card",
+        onClick: () => {
+          const name = svc.name || "service";
+          app.sendMessage({
+            role: "user",
+            content: [{ type: "text", text: "Use service: " + name + " at " + url }],
+          });
+        },
+      },
+        el("div", { className: "service-name" }, svc.name || "Unnamed Service"),
+        svc.about ? el("div", { className: "service-desc" }, svc.about) : null,
+        chips,
+      );
+      list.appendChild(card);
+    }
+
+    const countText = el("div", { className: "count-text" },
+      services.length + " service" + (services.length === 1 ? "" : "s") + " found");
+
+    root.replaceChildren(searchInput, countText, list);
+    searchInput.focus();
+  }
+
+  async function doSearch(query) {
+    try {
+      const result = await app.callServerTool("l402-search", { query: query || "", maxResults: 50 });
+      const services = JSON.parse(result.content[0].text);
+      renderServices(Array.isArray(services) ? services : [], query);
+    } catch (err) {
+      showStatus("Failed to load services: " + (err.message || "unknown error"));
+    }
+  }
+
+  doSearch("");
+})();
+</script>
