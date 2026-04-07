@@ -1,3 +1,10 @@
+## [3.15.1](https://github.com/forgesworn/402-mcp/compare/v3.15.0...v3.15.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* publish mcpName field for MCP registry validation ([7e0c8ff](https://github.com/forgesworn/402-mcp/commit/7e0c8ffca0718499782fb813a900832b651a77e4))
+
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
 
