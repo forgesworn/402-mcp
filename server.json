@@ -1,0 +1,38 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.forgesworn/402-mcp",
+  "description": "L402 + x402 client for AI agents. Discover, pay for, and consume any Lightning-gated API autonomously. Multi-wallet (NWC, Cashu), multi-protocol (L402, x402, IETF Payment).",
+  "repository": {
+    "url": "https://github.com/forgesworn/402-mcp",
+    "source": "github"
+  },
+  "version_detail": {
+    "version": "3.15.0"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "402-mcp",
+      "version": "3.15.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "description": "Nostr Wallet Connect URI for autonomous Lightning payments",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": true,
+          "name": "NWC_URI"
+        },
+        {
+          "description": "Maximum sats to auto-pay per request",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false,
+          "name": "MAX_AUTO_PAY_SATS"
+        }
+      ]
+    }
+  ]
+}

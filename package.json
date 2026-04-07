@@ -1,6 +1,7 @@
 {
   "name": "402-mcp",
   "version": "3.15.0",
+  "mcpName": "io.github.forgesworn/402-mcp",
   "description": "L402 + x402 client MCP - AI agents discover, pay for, and consume any payment-gated API",
   "type": "module",
   "bin": {
