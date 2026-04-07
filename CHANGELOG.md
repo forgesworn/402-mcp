@@ -1,3 +1,10 @@
+## [3.15.2](https://github.com/forgesworn/402-mcp/compare/v3.15.1...v3.15.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* use dev.forgesworn namespace for MCP registry ([6166adb](https://github.com/forgesworn/402-mcp/commit/6166adbda47872565fc9989a3e3b325350d069de))
+
 ## [3.15.1](https://github.com/forgesworn/402-mcp/compare/v3.15.0...v3.15.1) (2026-04-07)
 
 
