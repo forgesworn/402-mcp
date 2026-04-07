@@ -1,0 +1,51 @@
+startCommand:
+  type: stdio
+  commandFunction: |-
+    (config) => ({
+      command: "npx",
+      args: ["402-mcp"],
+      env: {
+        ...(config.nwcUri ? { NWC_URI: config.nwcUri } : {}),
+        ...(config.cashuTokens ? { CASHU_TOKENS: config.cashuTokens } : {}),
+        ...(config.maxAutoPaySats != null ? { MAX_AUTO_PAY_SATS: String(config.maxAutoPaySats) } : {}),
+        ...(config.maxSpendPerMinuteSats != null ? { MAX_SPEND_PER_MINUTE_SATS: String(config.maxSpendPerMinuteSats) } : {})
+      }
+    })
+
+configSchema:
+  type: object
+  properties:
+    nwcUri:
+      type: string
+      title: NWC URI
+      description: >
+        Nostr Wallet Connect URI for fully autonomous Lightning payments
+        (e.g. nostr+walletconnect://...). Leave blank to use human-in-the-loop
+        QR-code payments instead.
+      format: password
+    cashuTokens:
+      type: string
+      title: Cashu token file path
+      description: >
+        Absolute path to a Cashu ecash token store file. Optional — omit if
+        using NWC or human-in-the-loop payments.
+    maxAutoPaySats:
+      type: integer
+      title: Max auto-pay (sats)
+      description: >
+        Safety cap for a single autonomous payment in satoshis. Payments above
+        this threshold require human approval. Default: 1000.
+      default: 1000
+      minimum: 0
+    maxSpendPerMinuteSats:
+      type: integer
+      title: Max spend per minute (sats)
+      description: >
+        Rolling 60-second spend cap across all payments in satoshis. Prevents
+        runaway spending from rapid successive payments. Default: 10000.
+      default: 10000
+      minimum: 0
+
+exampleConfig:
+  maxAutoPaySats: 1000
+  maxSpendPerMinuteSats: 10000

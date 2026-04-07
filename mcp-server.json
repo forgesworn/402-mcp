@@ -1,0 +1,47 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.forgesworn/402-mcp",
+  "description": "L402 + x402 client MCP server — AI agents discover, pay for, and consume any payment-gated API autonomously. Supports Lightning (NWC), Cashu ecash, and human-in-the-loop payments. Works with any L402-compliant server: toll-booth, Aperture, or any conforming implementation.",
+  "repository": {
+    "url": "https://github.com/forgesworn/402-mcp",
+    "source": "github"
+  },
+  "version_detail": {
+    "version": "3.15.0"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "402-mcp",
+      "runtime": "node",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "NWC_URI",
+          "description": "Nostr Wallet Connect URI for fully autonomous Lightning payments (e.g. nostr+walletconnect://...). Optional — omit to use human-in-the-loop QR payments.",
+          "required": false,
+          "sensitive": true
+        },
+        {
+          "name": "CASHU_TOKENS",
+          "description": "Absolute path to a Cashu ecash token store file. Optional.",
+          "required": false
+        },
+        {
+          "name": "MAX_AUTO_PAY_SATS",
+          "description": "Safety cap for a single autonomous payment in satoshis. Default: 1000.",
+          "required": false,
+          "default": "1000"
+        },
+        {
+          "name": "MAX_SPEND_PER_MINUTE_SATS",
+          "description": "Rolling 60-second spend cap across all payments in satoshis. Default: 10000.",
+          "required": false,
+          "default": "10000"
+        }
+      ]
+    }
+  ]
+}
