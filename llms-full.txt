@@ -79,6 +79,15 @@ src/
     detect.ts              # Detect toll-booth vs generic L402 servers
     bolt11.ts              # Decode BOLT11 invoices (amount extraction)
     challenge-cache.ts     # Cache parsed challenges for l402-pay
+  x402/
+    parse.ts               # Detect X-Payment-Required: x402 header; parse EVM challenge
+    payment.ts             # Format payment request with EIP-681 deeplink for human payment
+  xcashu/
+    parse.ts               # Detect X-Cashu header; parse NUT-18 payment request
+    payment.ts             # Autonomous ecash payment: coin-select, send exact token amount
+  ietf-payment/
+    parse.ts               # Detect/parse WWW-Authenticate: Payment challenges (draft-ryan-httpauth-payment-01)
+    credential.ts          # Build Authorization: Payment base64url credential after Lightning payment
   store/
     credentials.ts         # Encrypted credential persistence (JSON)
     cashu-tokens.ts        # Cashu token store (add/remove/balance)
@@ -265,6 +274,19 @@ The L402 protocol is an extension of HTTP 402 (Payment Required):
 5. **Server** validates the macaroon + preimage and returns the data
 
 402-mcp handles steps 2–5 automatically within `l402-fetch`.
+
+## Supported 402 Protocol Variants
+
+`l402-fetch` detects and handles four HTTP 402 challenge variants. Detection order in source: L402, x402, xCashu, IETF Payment.
+
+| Protocol | Detection | Credential sent | Autonomous? |
+|----------|-----------|----------------|-------------|
+| **L402** | `WWW-Authenticate: L402 macaroon=…, invoice=…` | `Authorization: L402 <macaroon>:<preimage>` | Yes (NWC or Cashu) |
+| **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment id=… method=lightning …` | `Authorization: Payment <base64url-json>` | Yes (NWC or Cashu) |
+| **xCashu** (NUT-18) | `X-Cashu: creqA<base64url>` | `X-Cashu: <cashuB-token>` | Yes (Cashu wallet only) |
+| **x402** | `X-Payment-Required: x402` + JSON body | Human presents EIP-681 deeplink | No — on-chain EVM; surfaced to human |
+
+xCashu uses coin selection via `wallet.send(amount, proofs, { includeFees: true })` and restores change proofs to the token store. IETF Payment decodes the base64url charge request to extract the BOLT11 invoice, then pays it through the normal wallet stack and wraps the preimage in a JSON credential.
 
 ## Wallet Priority and Resolution
 

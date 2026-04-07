@@ -120,6 +120,13 @@ Three payment rails are tried in priority order:
 
 The agent can override the payment method per-call, or you can configure only the methods you want available.
 
+`l402-fetch` handles four HTTP 402 challenge variants transparently:
+
+- **L402** (`WWW-Authenticate: L402`) — the primary protocol; Lightning invoice paid via the wallet stack.
+- **IETF Payment** (`WWW-Authenticate: Payment`, `draft-ryan-httpauth-payment-01`) — alternative Lightning path; builds a base64url credential after payment.
+- **xCashu** (`X-Cashu: creqA…`, NUT-18) — autonomous ecash payment; selects and sends the exact token amount without a Lightning round-trip.
+- **x402** (`X-Payment-Required: x402`) — on-chain EVM payment; surfaces an EIP-681 deeplink to the human (no autonomous settlement).
+
 ## Safety Model
 
 Two safety primitives protect against runaway spending:

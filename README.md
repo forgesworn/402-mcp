@@ -79,7 +79,7 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
-| `TRANSPORT_PREFERENCE` | `clearnet` | Preferred network transport: `clearnet`, `tor`, or `hns` |
+| `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services (comma-separated) |
 | `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses (e.g. `socks5h://127.0.0.1:9050`) |
 | `SOCKS_PROXY` | - | Generic SOCKS5 proxy for all requests when set |
 | `HNS_GATEWAY_URL` | - | HTTP gateway for Handshake (`.hns`) domains (e.g. `https://hns.to`) |
@@ -125,6 +125,15 @@ Three payment rails, tried in priority order:
 3. **Human-in-the-loop** — presents QR code, polls for settlement
 
 The agent can override the method per-call, or you can configure only the methods you want.
+
+`l402-fetch` handles four HTTP 402 challenge variants transparently:
+
+| Protocol | Challenge header | Payment |
+|----------|-----------------|---------|
+| **L402** | `WWW-Authenticate: L402` | Lightning invoice via wallet stack |
+| **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment` | Lightning invoice via wallet stack |
+| **xCashu** (NUT-18) | `X-Cashu: creqA…` | Ecash token sent directly (requires Cashu wallet) |
+| **x402** | `X-Payment-Required: x402` | On-chain EVM transfer; surfaced to human with EIP-681 deeplink |
 
 ## Safety
 
