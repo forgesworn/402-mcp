@@ -1,6 +1,6 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.forgesworn/402-mcp",
+  "name": "dev.forgesworn/402-mcp",
   "description": "L402 + x402 client for AI agents. Discover, pay for, and consume any Lightning-gated API autonomously. Multi-wallet (NWC, Cashu), multi-protocol (L402, x402, IETF Payment).",
   "repository": {
     "url": "https://github.com/forgesworn/402-mcp",
