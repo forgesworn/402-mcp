@@ -1,3 +1,10 @@
+## [3.15.3](https://github.com/forgesworn/402-mcp/compare/v3.15.2...v3.15.3) (2026-04-12)
+
+
+### Bug Fixes
+
+* resolve runtime dependency vulnerabilities ([a7f4450](https://github.com/forgesworn/402-mcp/commit/a7f4450c3c23d2418178c24bb856dfb99221ec62))
+
 ## [3.15.2](https://github.com/forgesworn/402-mcp/compare/v3.15.1...v3.15.2) (2026-04-07)
 
 
