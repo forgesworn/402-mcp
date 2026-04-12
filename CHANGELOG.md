@@ -1,3 +1,10 @@
+## [3.15.4](https://github.com/forgesworn/402-mcp/compare/v3.15.3...v3.15.4) (2026-04-12)
+
+
+### Bug Fixes
+
+* replace bolt11 with light-bolt11-decoder to drop elliptic vulnerability ([e824366](https://github.com/forgesworn/402-mcp/commit/e8243660a83f07cb2eb193d3f2f3c5b1f93bdbcb))
+
 ## [3.15.3](https://github.com/forgesworn/402-mcp/compare/v3.15.2...v3.15.3) (2026-04-12)
 
 
