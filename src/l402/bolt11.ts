@@ -1,8 +1,4 @@
-import type bolt11Type from 'bolt11'
-import { createRequire } from 'node:module'
-
-const require = createRequire(import.meta.url)
-const bolt11Lib = require('bolt11') as typeof bolt11Type
+import { decode } from 'light-bolt11-decoder'
 
 export interface DecodedInvoice {
   costSats: number | null
@@ -13,19 +9,21 @@ export interface DecodedInvoice {
 /** Decodes a BOLT-11 Lightning invoice to extract amount, payment hash, and expiry. */
 export function decodeBolt11(invoice: string): DecodedInvoice {
   try {
-    const decoded = bolt11Lib.decode(invoice)
+    const { sections } = decode(invoice)
 
-    let costSats: number | null = null
-    if (decoded.satoshis !== null && decoded.satoshis !== undefined) {
-      costSats = decoded.satoshis
-    } else if (decoded.millisatoshis !== null && decoded.millisatoshis !== undefined) {
-      costSats = Math.floor(Number(decoded.millisatoshis) / 1000)
-    }
+    const amountSection = sections.find(s => s.name === 'amount')
+    const costSats = amountSection && 'value' in amountSection
+      ? Math.floor(Number(amountSection.value) / 1000)
+      : null
 
-    const paymentHash = decoded.tagsObject.payment_hash ?? null
+    const hashSection = sections.find(s => s.name === 'payment_hash')
+    const paymentHash = hashSection && 'value' in hashSection
+      ? (hashSection.value as string)
+      : null
 
-    const expiry = typeof decoded.timeExpireDate === 'number' && typeof decoded.timestamp === 'number'
-      ? decoded.timeExpireDate - decoded.timestamp
+    const expirySection = sections.find(s => s.name === 'expiry')
+    const expiry = expirySection && 'value' in expirySection
+      ? (expirySection.value as number)
       : 3600
 
     return { costSats, paymentHash, expiry }
