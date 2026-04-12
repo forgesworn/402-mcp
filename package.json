@@ -47,16 +47,12 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@forgesworn/toll-booth": "file:../toll-booth",
-    "@semantic-release/changelog": "^6.0.3",
-    "@semantic-release/git": "^10.0.1",
-    "@semantic-release/github": "^12.0.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^24.12.0",
     "@types/qrcode": "^1.5.5",
     "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^10.0.3",
-    "semantic-release": "^25.0.3",
     "typescript": "^5.7.0",
     "typescript-eslint": "^8.57.1",
     "vitest": "^4.0.18"
@@ -99,6 +95,9 @@
     "llms-full.txt"
   ],
   "license": "MIT",
+  "publishConfig": {
+    "provenance": true
+  },
   "funding": {
     "type": "lightning",
     "url": "lightning:thedonkey@strike.me"
