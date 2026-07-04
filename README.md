@@ -179,7 +179,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
 
 Built by [@forgesworn](https://github.com/forgesworn).
 
-- Lightning tips: `thedonkey@strike.me`
+- Lightning tips: `profusemeat89@walletofsatoshi.com`
 - Nostr: `npub1mgvlrnf5hm9yf0n5mf9nqmvarhvxkc6remu5ec3vf8r0txqkuk7su0e7q2`
 
 ---
