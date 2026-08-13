@@ -5,7 +5,7 @@ This project uses [CLAUDE.md](./CLAUDE.md) as the primary source of AI agent ins
 - Build, test, and typecheck commands
 - Project structure and conventions
 - Security patterns and rationale
-- Dependency API notes (cashu-ts v2, nostr-tools NIP-44)
+- Dependency API notes (cashu-ts v2, @forgesworn/nwc-kit, farrier-kit)
 - Testing conventions (handler extraction, mock injection)
 
 All AI coding agents (Cursor, Copilot, Gemini, etc.) should read `CLAUDE.md` for project context.

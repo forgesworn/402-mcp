@@ -17,11 +17,11 @@
       },
       "environmentVariables": [
         {
-          "description": "Nostr Wallet Connect URI for autonomous Lightning payments",
+          "description": "Absolute path to a private 0600 file containing the Nostr Wallet Connect bearer URI",
           "isRequired": false,
           "format": "string",
-          "isSecret": true,
-          "name": "NWC_URI"
+          "isSecret": false,
+          "name": "NWC_URI_FILE"
         },
         {
           "description": "Maximum sats to auto-pay per request",

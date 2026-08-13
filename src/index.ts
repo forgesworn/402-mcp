@@ -112,11 +112,17 @@ function getWallet(method?: WalletMethod): WalletProvider | undefined {
 async function payInvoice(
   invoice: string,
   options?: { serverOrigin?: string; method?: WalletMethod },
-): Promise<{ paid: boolean; preimage?: string; method: string }> {
+): Promise<{ paid: boolean; preimage?: string; method: string; outcome?: 'unknown'; reason?: string }> {
   const wallet = getWallet(options?.method)
   if (!wallet) return { paid: false, method: 'none' }
   const result = await wallet.payInvoice(invoice, { serverOrigin: options?.serverOrigin })
-  return { paid: result.paid, preimage: result.preimage, method: result.method }
+  return {
+    paid: result.paid,
+    preimage: result.preimage,
+    method: result.method,
+    ...(result.outcome ? { outcome: result.outcome } : {}),
+    ...(result.reason ? { reason: result.reason } : {}),
+  }
 }
 
 // Helper: store credential — validates preimage and macaroon to prevent credential poisoning

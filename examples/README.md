@@ -4,14 +4,17 @@
 
 ### Claude Desktop / Cursor
 
-Copy `claude-desktop-config.json` into your MCP client configuration, replacing the `NWC_URI` with your own Nostr Wallet Connect URI.
+Create a private file containing your Nostr Wallet Connect URI, run
+`chmod 600 /absolute/path/to/402-mcp.nwc`, then copy
+`claude-desktop-config.json` into your MCP client configuration and replace the
+example `NWC_URI_FILE` path.
 
 ### HTTP transport
 
 For network access (e.g. remote agents or multi-client setups):
 
 ```bash
-TRANSPORT=http PORT=3402 NWC_URI="nostr+walletconnect://..." npx 402-mcp
+TRANSPORT=http PORT=3402 NWC_URI_FILE="/run/secrets/402-mcp.nwc" npx 402-mcp
 ```
 
 ## Typical agent workflow
@@ -43,8 +46,8 @@ An AI agent using 402-mcp follows this pattern:
 
 402-mcp tries payment methods in this order:
 
-1. **NWC** — if `NWC_URI` is set, pays via Lightning wallet (fully autonomous)
+1. **NWC** — if `NWC_URI_FILE` points to a private bearer file, pays via Lightning wallet (fully autonomous)
 2. **Cashu** — if `CASHU_TOKENS` points to a token file, melts ecash (fully autonomous)
 3. **Human-in-the-loop** — presents a QR code and polls for settlement
 
-Configure only the methods you want available. If you only set `NWC_URI`, Cashu and human fallback are skipped.
+Configure only the methods you want available. If you only set `NWC_URI_FILE`, Cashu and human fallback are skipped.

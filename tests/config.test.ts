@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
+const VALID_NWC_URI = `nostr+walletconnect://${'01'.padStart(64, '0')}?relay=wss%3A%2F%2Frelay.example.com&secret=${'02'.padStart(64, '0')}`
 
 describe('config validation', () => {
   beforeEach(() => {
@@ -57,16 +62,34 @@ describe('config validation', () => {
     expect(() => loadConfig()).not.toThrow()
   })
 
-  // Issue #2: NWC_URI scrubbed from process.env
-  it('deletes NWC_URI from process.env after reading', async () => {
+  it('deletes and refuses a raw NWC_URI', async () => {
     vi.stubEnv('NWC_URI', 'nostr+walletconnect://pubkey?secret=deadbeef')
     const { loadConfig } = await import('../src/config.js')
-    const config = loadConfig()
-    expect(config.nwcUri).toBe('nostr+walletconnect://pubkey?secret=deadbeef')
+    expect(() => loadConfig()).toThrow('NWC_URI is disabled')
     expect(process.env.NWC_URI).toBeUndefined()
   })
 
-  it('leaves process.env unchanged when NWC_URI is not set', async () => {
+  it('loads NWC only from a private bounded file and deletes its env path', async () => {
+    const directory = mkdtempSync(join(tmpdir(), '402-mcp-nwc-'))
+    try {
+      const secretFile = join(directory, 'wallet.nwc')
+      writeFileSync(secretFile, `${VALID_NWC_URI}\n`, { mode: 0o600 })
+      vi.stubEnv('NWC_URI_FILE', secretFile)
+      const { loadConfig } = await import('../src/config.js')
+      expect(loadConfig().nwcUri).toBe(VALID_NWC_URI)
+      expect(process.env.NWC_URI_FILE).toBeUndefined()
+
+      if (process.platform !== 'win32') {
+        chmodSync(secretFile, 0o644)
+        vi.stubEnv('NWC_URI_FILE', secretFile)
+        expect(() => loadConfig()).toThrow('chmod 600')
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves the NWC connection unset when NWC_URI_FILE is not set', async () => {
     const { loadConfig } = await import('../src/config.js')
     const config = loadConfig()
     expect(config.nwcUri).toBeUndefined()

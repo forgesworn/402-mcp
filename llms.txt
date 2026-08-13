@@ -2,7 +2,7 @@
 
 > 402-mcp is an MCP server that gives AI agents economic agency — the ability to discover, pay for, and consume any L402 or x402 payment-gated API without human registration, API keys, or middlemen. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits.
 
-402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payment rails are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
+402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payer methods are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
 
 Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — enabling censorship-resistant API access without any client-side configuration.
 
@@ -31,7 +31,7 @@ Add to your MCP configuration:
       "command": "npx",
       "args": ["402-mcp"],
       "env": {
-        "NWC_URI": "nostr+walletconnect://...",
+        "NWC_URI_FILE": "/absolute/path/to/402-mcp.nwc",
         "MAX_AUTO_PAY_SATS": "1000"
       }
     }
@@ -43,7 +43,7 @@ Add to your MCP configuration:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NWC_URI` | — | Nostr Wallet Connect URI for autonomous Lightning payments |
+| `NWC_URI_FILE` | — | Private 0600 file containing the Nostr Wallet Connect bearer URI |
 | `CASHU_TOKENS` | — | Path to Cashu token store file |
 | `MAX_AUTO_PAY_SATS` | 1000 | Safety cap; payments above this require human confirmation |
 | `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Rolling 60-second spend cap across all payments |
@@ -110,9 +110,9 @@ Redeem Cashu ecash tokens directly with the toll-booth server, bypassing the Lig
 
 ## Payment Methods
 
-Three payment rails are tried in priority order:
+Three payer methods are tried in priority order:
 
-1. **NWC (Nostr Wallet Connect)** — fully autonomous. The agent pays invoices directly from a connected Lightning wallet via the NWC protocol. Configure with `NWC_URI`. No human interaction required.
+1. **NWC (Nostr Wallet Connect)** — fully autonomous. The agent pays invoices directly from a connected Lightning wallet via the NWC protocol. Configure with `NWC_URI_FILE`; raw bearer values are refused. No human interaction required.
 
 2. **Cashu** — fully autonomous. The agent melts ecash tokens to pay invoices. Configure with `CASHU_TOKENS` pointing to a token store file. No Lightning node required on the agent side.
 
@@ -140,7 +140,7 @@ The human stays in control of three things: the safety caps, which payment metho
 
 - **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Handshake names are resolved via DNS-over-HTTPS with the resolved IP validated against blocked ranges. .onion addresses bypass DNS and route through the configured SOCKS proxy. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
 - **Credential encryption** — stored credentials are encrypted with AES-256-GCM. The encryption key is stored in the OS keychain when available, falling back to a file-based key with a warning.
-- **Preimage validation** — preimages are validated as hex before storage to prevent header injection.
+- **Settlement proof** — NWC responses are authenticated with NIP-44 v2 and signed events, then the returned preimage is verified against the challenged BOLT-11 payment hash before storage.
 - **Spend tracking** — atomic `tryRecord()` prevents TOCTOU race conditions in concurrent spend checks.
 - **HTTP transport hardening** — rate limiting (100 req/60s per IP), security headers (CSP, X-Frame-Options, nosniff), and loopback-only binding by default.
 

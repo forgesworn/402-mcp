@@ -14,7 +14,7 @@ const CreateInvoiceResponse = z.object({
 
 export interface BuyCreditsDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
-  payInvoice: (invoice: string, options?: { serverOrigin?: string; method?: WalletMethod }) => Promise<{ paid: boolean; preimage?: string; method: string }>
+  payInvoice: (invoice: string, options?: { serverOrigin?: string; method?: WalletMethod }) => Promise<{ paid: boolean; preimage?: string; method: string; outcome?: 'unknown'; reason?: string }>
   storeCredential: (origin: string, macaroon: string, preimage: string, paymentHash: string) => boolean
   decodeBolt11: (invoice: string) => DecodedInvoice
   maxAutoPaySats: number
@@ -139,8 +139,25 @@ export async function handleBuyCredits(
     const payResult = await deps.payInvoice(invoice, { method: args.method, serverOrigin: origin })
 
     // Roll back spend-limit reservation if payment failed
-    if (!payResult.paid || !payResult.preimage) {
+    if (!payResult.paid && payResult.outcome !== 'unknown') {
       deps.spendTracker.unrecord(spendAmount)
+    }
+
+    if (payResult.outcome === 'unknown') {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            paid: false,
+            paymentState: 'unknown',
+            amountSats: args.amountSats,
+            paymentHash: decoded.paymentHash,
+            method: payResult.method,
+            message: payResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
+          }, null, 2),
+        }],
+        isError: true as const,
+      }
     }
 
     if (payResult.paid && payResult.preimage) {
@@ -159,6 +176,23 @@ export async function handleBuyCredits(
           }, null, 2),
         }],
         ...(stored ? {} : { isError: true as const }),
+      }
+    }
+
+    if (payResult.paid) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            paid: false,
+            paymentState: 'unknown',
+            amountSats: args.amountSats,
+            paymentHash: decoded.paymentHash,
+            method: payResult.method,
+            message: 'The wallet reported payment without a settlement preimage. Reconcile the original invoice before retrying.',
+          }, null, 2),
+        }],
+        isError: true as const,
       }
     }
 

@@ -68,14 +68,15 @@ To make paid calls, you need a payment method. Pick one:
 
 The fastest path to fully autonomous payments. Your agent pays from your Lightning wallet without asking.
 
-1. Use a wallet that supports NWC (e.g. [Alby](https://getalby.com/))
-2. Generate an NWC connection URI from your wallet
-3. Add it to your MCP config:
+1. Use any wallet service that supports NIP-47 Nostr Wallet Connect.
+2. Generate a tightly permissioned NWC connection URI and put it in a private
+   local file with mode `0600`. Do not put the URI itself in shell history.
+3. Pass only that file path to 402-mcp:
 
 **Claude Code:**
 ```bash
 claude mcp remove 402-mcp
-claude mcp add 402-mcp -e NWC_URI="nostr+walletconnect://..." -e MAX_AUTO_PAY_SATS=1000 -- npx 402-mcp
+claude mcp add 402-mcp -e NWC_URI_FILE="/absolute/path/to/402-mcp.nwc" -e MAX_AUTO_PAY_SATS=1000 -- npx 402-mcp
 ```
 
 **Claude Desktop / Cursor:** Add the `env` block to your config:
@@ -86,7 +87,7 @@ claude mcp add 402-mcp -e NWC_URI="nostr+walletconnect://..." -e MAX_AUTO_PAY_SA
       "command": "npx",
       "args": ["402-mcp"],
       "env": {
-        "NWC_URI": "nostr+walletconnect://...",
+        "NWC_URI_FILE": "/absolute/path/to/402-mcp.nwc",
         "MAX_AUTO_PAY_SATS": "1000"
       }
     }
@@ -95,6 +96,8 @@ claude mcp add 402-mcp -e NWC_URI="nostr+walletconnect://..." -e MAX_AUTO_PAY_SA
 ```
 
 `MAX_AUTO_PAY_SATS` caps any single payment. Above this, the agent asks you first.
+Raw `NWC_URI` values are refused so the bearer credential cannot leak through a
+process environment or MCP configuration.
 
 </details>
 

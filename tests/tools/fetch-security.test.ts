@@ -63,6 +63,8 @@ describe('handleFetch security', () => {
     expect(result.isError).toBe(true)
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.error).toContain('invalid characters')
+    expect(parsed.paymentState).toBe('unknown')
+    expect(deps.spendTracker.recentSpend()).toBe(50)
     expect(deps.credentialStore.set).not.toHaveBeenCalled()
   })
 
@@ -83,6 +85,8 @@ describe('handleFetch security', () => {
     expect(result.isError).toBe(true)
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.error).toContain('invalid characters')
+    expect(parsed.paymentState).toBe('unknown')
+    expect(deps.spendTracker.recentSpend()).toBe(50)
   })
 
   it('rolls back spend limit when payment fails', async () => {
@@ -104,6 +108,69 @@ describe('handleFetch security', () => {
 
     // Spend should have been rolled back — budget should be available
     expect(tracker.recentSpend()).toBe(0)
+  })
+
+  it('does not retry or release budget when an L402 payment outcome is unknown', async () => {
+    const tracker = new SpendTracker()
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(402, {
+      'www-authenticate': 'L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+    }, '{}'))
+    const deps = makeDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({
+        paid: false,
+        method: 'nwc',
+        outcome: 'unknown',
+        reason: 'Reconcile before retrying.',
+      }),
+      spendTracker: tracker,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paymentState: 'unknown', paymentHash: 'hash1' })
+    expect(parsed.message).toContain('Reconcile')
+    expect(result.isError).toBe(true)
+    expect(tracker.recentSpend()).toBe(50)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not fall through to a second rail when an IETF payment outcome is unknown', async () => {
+    const tracker = new SpendTracker()
+    const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(402, {
+      'www-authenticate': 'Payment id="id1"',
+    }, '{}'))
+    const deps = makeDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      isIETFPayment: vi.fn().mockReturnValue(true),
+      parseIETFPayment: vi.fn().mockReturnValue({
+        id: 'id1',
+        realm: 'api.example.com',
+        method: 'lightning',
+        intent: 'charge',
+        request: 'request',
+        invoice: 'lnbc50n1test',
+        paymentHash: 'hash1',
+        amountSats: 50,
+      }),
+      payInvoice: vi.fn().mockResolvedValue({
+        paid: false,
+        method: 'nwc',
+        outcome: 'unknown',
+        reason: 'Reconcile before retrying.',
+      }),
+      spendTracker: tracker,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ protocol: 'ietf-payment', paymentState: 'unknown', paymentHash: 'hash1' })
+    expect(result.isError).toBe(true)
+    expect(tracker.recentSpend()).toBe(50)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(deps.parseL402).not.toHaveBeenCalled()
   })
 
   it('strips dangerous hop-by-hop headers from user input', async () => {
