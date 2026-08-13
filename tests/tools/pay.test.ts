@@ -302,7 +302,7 @@ describe('handlePay', () => {
     expect(spendTracker.recentSpend()).toBe(0)
   })
 
-  it('returns safe error when wallet throws and rolls back spend', async () => {
+  it('returns safe unknown outcome when wallet throws and retains spend reservation', async () => {
     const spendTracker = new SpendTracker()
     const mockWallet = {
       method: 'nwc' as const,
@@ -327,8 +327,102 @@ describe('handlePay', () => {
     expect(result.isError).toBe(true)
     // Should not leak the raw error with potential secrets
     expect(parsed.error).not.toContain('secret=abc123')
-    // Spend should be rolled back on exception
-    expect(spendTracker.recentSpend()).toBe(0)
+    expect(parsed.paymentState).toBe('unknown')
+    // An exception after calling the wallet may still have paid.
+    expect(spendTracker.recentSpend()).toBe(10)
+  })
+
+  it('retains spend reservation and requires reconciliation for an unknown result', async () => {
+    const spendTracker = new SpendTracker()
+    const result = await handlePay(
+      { invoice: 'lnbc...', macaroon: 'mac123' },
+      {
+        ...baseDeps,
+        cache: new ChallengeCache(),
+        resolveWallet: () => ({
+          method: 'nwc' as const,
+          available: true,
+          payInvoice: vi.fn().mockResolvedValue({
+            paid: false,
+            method: 'nwc',
+            outcome: 'unknown' as const,
+            reason: 'Reconcile the original invoice before retrying.',
+          }),
+        }),
+        storeCredential: vi.fn().mockReturnValue(true),
+        maxAutoPaySats: 1000,
+        spendTracker,
+        decodeBolt11: () => ({ costSats: 50, paymentHash: 'ab'.repeat(32), expiry: 3600 }),
+      },
+    )
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', method: 'nwc' })
+    expect(parsed.reason).toContain('Reconcile')
+    expect(result.isError).toBe(true)
+    expect(spendTracker.recentSpend()).toBe(50)
+  })
+
+  it('treats a paid result without a preimage as unknown and retains the reservation', async () => {
+    const spendTracker = new SpendTracker()
+    const result = await handlePay(
+      { invoice: 'lnbc...', macaroon: 'mac123' },
+      {
+        ...baseDeps,
+        cache: new ChallengeCache(),
+        resolveWallet: () => ({
+          method: 'nwc' as const,
+          available: true,
+          payInvoice: vi.fn().mockResolvedValue({ paid: true, method: 'nwc' }),
+        }),
+        storeCredential: vi.fn().mockReturnValue(true),
+        maxAutoPaySats: 1000,
+        spendTracker,
+        decodeBolt11: () => ({ costSats: 50, paymentHash: 'ab'.repeat(32), expiry: 3600 }),
+      },
+    )
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', method: 'nwc' })
+    expect(parsed.reason).toContain('Reconcile')
+    expect(result.isError).toBe(true)
+    expect(spendTracker.recentSpend()).toBe(50)
+  })
+
+  it('retains the reservation when a human payment page is not yet confirmed', async () => {
+    let nowCalls = 0
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => nowCalls++ < 4 ? 0 : 120_001)
+    const cache = new ChallengeCache()
+    cache.set({
+      invoice: 'lnbc...',
+      macaroon: 'mac123',
+      paymentHash: HASH_1,
+      costSats: 50,
+      expiresAt: 3600_000,
+      url: 'https://api.example.com/resource',
+      paymentUrl: 'https://api.example.com/invoice-status/1',
+    })
+    const spendTracker = new SpendTracker()
+
+    const result = await handlePay(
+      { paymentHash: HASH_1, method: 'human' },
+      {
+        ...baseDeps,
+        cache,
+        resolveWallet: () => ({ method: 'human' as const, available: true, payInvoice: vi.fn() }),
+        storeCredential: vi.fn().mockReturnValue(true),
+        maxAutoPaySats: 1000,
+        spendTracker,
+        decodeBolt11: () => ({ costSats: 50, paymentHash: HASH_1, expiry: 3600 }),
+      },
+    )
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown' })
+    expect(parsed.reason).toContain('reconcile')
+    expect(result.isError).toBe(true)
+    now.mockReturnValue(0)
+    expect(spendTracker.recentSpend()).toBe(50)
+    now.mockRestore()
   })
 
   it('rejects amountless invoices', async () => {

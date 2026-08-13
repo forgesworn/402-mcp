@@ -19,10 +19,10 @@
       },
       "environmentVariables": [
         {
-          "name": "NWC_URI",
-          "description": "Nostr Wallet Connect URI for fully autonomous Lightning payments (e.g. nostr+walletconnect://...). Optional — omit to use human-in-the-loop QR payments.",
+          "name": "NWC_URI_FILE",
+          "description": "Absolute path to a private 0600 file containing the Nostr Wallet Connect bearer URI. Optional — omit to use human-in-the-loop QR payments.",
           "required": false,
-          "sensitive": true
+          "sensitive": false
         },
         {
           "name": "CASHU_TOKENS",

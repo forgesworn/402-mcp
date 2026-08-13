@@ -24,7 +24,7 @@ Key environment variables:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `NWC_URI` | — | Nostr Wallet Connect URI for autonomous Lightning payments |
+| `NWC_URI_FILE` | — | Absolute path to a private 0600 file containing the NWC bearer URI |
 | `CASHU_TOKENS` | — | Path to Cashu token store file |
 | `MAX_AUTO_PAY_SATS` | `1000` | Auto-pay threshold per request |
 | `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap |
@@ -65,7 +65,8 @@ Tests live in `tests/` (NOT co-located with source). Each handler's `handle*` fu
 
 - **cashu-ts v2:** `getDecodedToken()` returns `{ mint, proofs, unit }` at top level. There is NO `.token` array.
 - **cashu-ts melt flow:** Must call `wallet.send(amount, proofs, { includeFees: true })` before `wallet.meltProofs()` to select proofs properly.
-- **nostr-tools NIP-44:** Use `getConversationKey(privkey, pubkey)` then `encrypt(plaintext, conversationKey)`. Decrypt is synchronous. Do NOT use NIP-04 (deprecated, cryptographically weak).
+- **NWC:** Use `@forgesworn/nwc-kit`; do not implement NIP-47 or NIP-44 locally. The client requires signed capability discovery and NIP-44 v2.
+- **Payment proof:** Use farrier-kit to decode the challenged BOLT-11 invoice and verify the returned preimage before reporting payment.
 
 ## Conventions
 

@@ -4,14 +4,14 @@ Technical reference diagrams for 402-mcp. For a quick overview, see the [README]
 
 ## System architecture
 
-How 402-mcp connects AI agents to paid APIs via multiple payment rails.
+How 402-mcp connects AI agents to paid APIs using several payer methods.
 
 ```mermaid
 graph TB
     Agent["AI Agent<br/>(Claude, Cursor, etc.)"]
     MCP["402-mcp<br/>MCP Server"]
 
-    subgraph Wallets["Payment Rails"]
+    subgraph Wallets["Payer Methods"]
         NWC["NWC<br/>(Lightning)"]
         Cashu["Cashu<br/>(Ecash)"]
         Human["Human-in-the-loop<br/>(QR code)"]

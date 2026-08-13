@@ -164,13 +164,13 @@ export async function handlePay(
         intervalMs = Math.min(intervalMs * 1.5, 5000)
       }
 
-      deps.spendTracker.unrecord(costSats)
       return {
         content: [{
           type: 'text' as const,
           text: JSON.stringify({
             paid: false,
-            reason: 'Payment not yet confirmed after 120s. If you selected a different tier on the payment page, paste the L402 token here.',
+            paymentState: 'unknown',
+            reason: 'Payment not confirmed after 120s. It may still have settled; reconcile this payment before retrying. If you selected a different tier on the payment page, paste the L402 token here.',
             paymentUrl: cachedPaymentUrl,
           }),
         }],
@@ -181,8 +181,24 @@ export async function handlePay(
     const result = await wallet.payInvoice(invoice, { serverOrigin: origin })
 
     // Roll back spend-limit reservation if payment failed
-    if (!result.paid || !result.preimage) {
+    if (!result.paid && result.outcome !== 'unknown') {
       deps.spendTracker.unrecord(costSats)
+    }
+
+    if (result.paid && !result.preimage) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            paid: false,
+            paymentState: 'unknown',
+            credentialsStored: false,
+            method: result.method,
+            reason: 'The wallet reported payment without a settlement preimage. Reconcile the original invoice before retrying.',
+          }, null, 2),
+        }],
+        isError: true as const,
+      }
     }
 
     let credentialsStored = false
@@ -207,19 +223,23 @@ export async function handlePay(
         type: 'text' as const,
         text: JSON.stringify({
           paid: result.paid,
+          paymentState: result.outcome ?? (result.paid ? 'paid' : 'failed'),
           credentialsStored,
           method: result.method,
+          ...(result.reason ? { reason: result.reason } : {}),
         }, null, 2),
       }],
+      ...(result.outcome === 'unknown' ? { isError: true as const } : {}),
     }
   } catch (err) {
-    // Roll back spend reservation on exception (payment may not have completed)
-    deps.spendTracker.unrecord(costSats)
-
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ error: safeErrorMessage(err) }),
+        text: JSON.stringify({
+          error: safeErrorMessage(err),
+          paymentState: 'unknown',
+          message: 'The payment attempt threw after budget reservation. Reconcile the original invoice before retrying.',
+        }),
       }],
       isError: true as const,
     }

@@ -4,7 +4,7 @@
       "command": "npx",
       "args": ["402-mcp"],
       "env": {
-        "NWC_URI": "nostr+walletconnect://your-wallet-pubkey?relay=wss://relay.example.com&secret=your-secret",
+        "NWC_URI_FILE": "/absolute/path/to/402-mcp.nwc",
         "MAX_AUTO_PAY_SATS": "1000",
         "MAX_SPEND_PER_MINUTE_SATS": "10000"
       }

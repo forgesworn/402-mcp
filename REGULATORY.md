@@ -43,7 +43,10 @@ All data is stored locally on the user's machine. 402-mcp has no server-side com
 
 - **Encryption at rest.** Credentials are encrypted with AES-256-GCM using a random 12-byte IV per operation. The encryption key is stored in the OS keychain where available (macOS Keychain, GNOME Keyring, Windows Credential Vault). A file-based fallback is used when the keychain is unavailable, with a warning emitted at startup.
 - **7-day auto-expiry.** Credentials older than 7 days are automatically purged. The TTL is enforced on every read and via periodic cleanup.
-- **NWC URI scrubbing.** The `NWC_URI` environment variable is deleted from `process.env` immediately after reading. The NWC URI grants spending authority over the user's wallet — it is the most sensitive piece of configuration in the system.
+- **File-only NWC authority.** Raw `NWC_URI` values are deleted and refused.
+  `NWC_URI_FILE` must point to a bounded private regular `0600` file. The URI
+  grants spending authority over the user's wallet and is never accepted in an
+  MCP argument, command line, registry password field, or raw environment value.
 - **Safe listing.** The `listSafe()` API never exposes macaroons or preimages in tool responses. Only metadata (host, path, expiry) is surfaced.
 
 ### Privacy
@@ -76,7 +79,7 @@ Cashu mints issue bearer ecash tokens that may be classified as **Electronic Mon
 | `MAX_AUTO_PAY_SATS` | 1000 sats | Per-request ceiling — payments above this require human approval |
 | `MAX_SPEND_PER_MINUTE_SATS` | 10000 sats | Rolling 60-second window — prevents rapid successive payments from exceeding a total budget |
 
-Both caps are enforced atomically via `SpendTracker.tryRecord()` to prevent TOCTOU race conditions. Failed payments are rolled back so they do not consume spend-limit headroom.
+Both caps are enforced atomically via `SpendTracker.tryRecord()` to prevent TOCTOU race conditions. Definitely rejected payments release their reservation. A timeout, abort, publication failure, malformed response, or invalid settlement proof retains it and returns an unknown payment state that must be reconciled before retrying.
 
 ---
 

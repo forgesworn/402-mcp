@@ -9,6 +9,8 @@ export interface PaymentResult {
   preimage?: string
   method: WalletMethod
   reason?: string
+  /** The request may have executed but settlement could not be proven. */
+  outcome?: 'unknown'
 }
 
 export interface WalletProvider {

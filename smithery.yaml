@@ -5,7 +5,7 @@ startCommand:
       command: "npx",
       args: ["402-mcp"],
       env: {
-        ...(config.nwcUri ? { NWC_URI: config.nwcUri } : {}),
+        ...(config.nwcUriFile ? { NWC_URI_FILE: config.nwcUriFile } : {}),
         ...(config.cashuTokens ? { CASHU_TOKENS: config.cashuTokens } : {}),
         ...(config.maxAutoPaySats != null ? { MAX_AUTO_PAY_SATS: String(config.maxAutoPaySats) } : {}),
         ...(config.maxSpendPerMinuteSats != null ? { MAX_SPEND_PER_MINUTE_SATS: String(config.maxSpendPerMinuteSats) } : {})
@@ -15,14 +15,13 @@ startCommand:
 configSchema:
   type: object
   properties:
-    nwcUri:
+    nwcUriFile:
       type: string
-      title: NWC URI
+      title: NWC private file path
       description: >
-        Nostr Wallet Connect URI for fully autonomous Lightning payments
-        (e.g. nostr+walletconnect://...). Leave blank to use human-in-the-loop
-        QR-code payments instead.
-      format: password
+        Absolute path to a private regular 0600 file containing the Nostr
+        Wallet Connect bearer URI. Raw bearer values are refused. Leave blank
+        to use human-in-the-loop QR-code payments instead.
     cashuTokens:
       type: string
       title: Cashu token file path

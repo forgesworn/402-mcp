@@ -36,6 +36,8 @@ Ask Claude: *"Search for paid joke APIs using l402-search"* — no wallet needed
 
 Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) to set up a wallet and watch your agent pay for its first API call.
 
+Requires Node.js 22 or newer.
+
 ## How it works
 
 ```mermaid
@@ -74,7 +76,7 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NWC_URI` | - | Nostr Wallet Connect URI for autonomous Lightning payments |
+| `NWC_URI_FILE` | - | Path to a private `0600` file containing the NWC bearer URI |
 | `CASHU_TOKENS` | - | Path to Cashu token store file |
 | `MAX_AUTO_PAY_SATS` | 1000 | Safety cap; payments above this require human confirmation |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
@@ -119,7 +121,7 @@ Services can announce multiple endpoints for the **same service** (same pricing,
 
 ## Payment methods
 
-Three payment rails, tried in priority order:
+Three payer methods, tried in priority order:
 
 1. **NWC** (Nostr Wallet Connect) — fully autonomous; pays from your connected wallet
 2. **Cashu** — fully autonomous; melts ecash tokens to pay invoices
@@ -150,19 +152,19 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 
 | Project | Role |
 |---------|------|
-| [toll-booth](https://github.com/forgesworn/toll-booth) | Payment-rail agnostic HTTP 402 middleware |
+| [toll-booth](https://github.com/forgesworn/toll-booth) | Payment-backend agnostic HTTP 402 middleware |
 | [satgate](https://github.com/forgesworn/satgate) | Pay-per-token AI inference proxy (built on toll-booth) |
 | **[402-mcp](https://github.com/forgesworn/402-mcp)** | **MCP client — AI agents discover, pay, and consume L402 + x402 APIs** |
 | [402-announce](https://github.com/forgesworn/402-announce) | Publish L402 services on Nostr for decentralised discovery |
 
-402-mcp is the **payment-rail agnostic** alternative to Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools) and Coinbase's x402 — no Lightning node required, multiple wallets, encrypted credentials.
+402-mcp is the **wallet-provider agnostic** alternative to Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools) and Coinbase's x402 — no Lightning node required, multiple wallets, encrypted credentials.
 
 <details>
 <summary>Full comparison</summary>
 
 | | 402-mcp | Lightning Labs agent tools |
 |---|---|---|
-| **Payment rails** | NWC + Cashu + human fallback | Lightning only |
+| **Payer methods** | NWC + Cashu + human fallback | Lightning only |
 | **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
 | **Server compatibility** | Any L402 server | Aperture-focused |
 | **Spend safety** | Per-payment cap + rolling 60s window | Per-call max-cost |

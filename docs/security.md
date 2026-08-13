@@ -9,7 +9,7 @@ Two complementary caps prevent runaway autonomous spending:
 - **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. Above this threshold the agent must ask for human approval.
 - **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
 
-Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls — concurrent callers could both pass the check before either recorded. If a payment fails after `tryRecord` succeeds, `unrecord(sats)` rolls back the entry so failed payments do not consume spend-limit headroom.
+Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls — concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
 
 The tracker also caps its internal entry list at 10,000 entries and evicts stale records to prevent unbounded memory growth.
 
@@ -90,7 +90,17 @@ All outbound HTTP uses the resilient fetch wrapper (`src/fetch/resilient-fetch.t
 - **Blocked hop-by-hop headers** — user-supplied headers on `l402-fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
 - **Zod schema validation** — all MCP tool inputs are validated with Zod schemas at the tool registration layer, rejecting malformed or unexpected input before any handler logic executes.
 - **Path traversal prevention** — `CREDENTIAL_STORE` and `CASHU_TOKENS` paths are validated to ensure they resolve within the user's home directory.
-- **NWC URI scrubbing** — the `NWC_URI` environment variable is deleted from `process.env` immediately after reading to prevent accidental exposure via process inspection or child processes.
+- **File-only NWC bearer** — raw `NWC_URI` values are refused. `NWC_URI_FILE`
+  must reference a private, regular `0600` file no larger than 8192 bytes; the
+  path is removed from `process.env` before later configuration can fail.
+- **Authenticated NWC settlement** — `@forgesworn/nwc-kit` requires signed
+  wallet capability and response events over NIP-44 v2. 402-mcp then uses
+  farrier-kit to verify that the returned preimage hashes to the challenged
+  BOLT-11 payment hash before it reports payment or stores a credential.
+- **No blind payment retry** — publication failures, response timeouts,
+  aborts, malformed wallet responses, and missing or invalid settlement proofs
+  are treated as unknown after submission. Auto-pay stops instead of falling
+  through to another rail or releasing the spend reservation.
 
 ## Reporting vulnerabilities
 

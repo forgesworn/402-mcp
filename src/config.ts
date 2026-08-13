@@ -1,5 +1,7 @@
 import { resolve } from 'node:path'
 import { homedir } from 'node:os'
+import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
+import { inspectNwcConnection } from '@forgesworn/nwc-kit'
 
 export interface L402Config {
   nwcUri: string | undefined
@@ -40,14 +42,54 @@ function assertRange(name: string, value: number, min: number, max: number): voi
   }
 }
 
+function readNwcUriFile(filePath: string): string {
+  const resolvedPath = resolve(filePath)
+  const descriptor = openSync(resolvedPath, 'r')
+  let bytes: Buffer | undefined
+  try {
+    const stats = fstatSync(descriptor)
+    if (!stats.isFile() || stats.size === 0 || stats.size > 8192) {
+      throw new Error('NWC_URI_FILE must be a non-empty regular file no larger than 8192 bytes')
+    }
+    if (process.platform !== 'win32' && (stats.mode & 0o077) !== 0) {
+      throw new Error('NWC_URI_FILE permissions are too broad; run chmod 600 on the file')
+    }
+    bytes = Buffer.allocUnsafe(stats.size)
+    let offset = 0
+    while (offset < bytes.length) {
+      const count = readSync(descriptor, bytes, offset, bytes.length - offset, null)
+      if (count === 0) throw new Error('NWC_URI_FILE changed while it was being read')
+      offset += count
+    }
+    const extra = Buffer.allocUnsafe(1)
+    try {
+      if (readSync(descriptor, extra, 0, 1, null) !== 0) {
+        throw new Error('NWC_URI_FILE changed while it was being read')
+      }
+    } finally {
+      extra.fill(0)
+    }
+    const uri = bytes.toString('utf-8').trim()
+    inspectNwcConnection(uri)
+    return uri
+  } finally {
+    bytes?.fill(0)
+    closeSync(descriptor)
+  }
+}
+
 /** Loads and validates configuration from environment variables, applying defaults. */
 export function loadConfig(): L402Config {
   const defaultCredentialStore = resolve(homedir(), '.402-mcp', 'credentials.json')
 
-  const nwcUri = process.env.NWC_URI
-  if (nwcUri !== undefined) {
-    delete process.env.NWC_URI
+  const rawNwcUri = process.env.NWC_URI
+  const nwcUriFile = process.env.NWC_URI_FILE
+  delete process.env.NWC_URI
+  delete process.env.NWC_URI_FILE
+  if (rawNwcUri !== undefined) {
+    throw new Error('NWC_URI is disabled because bearer wallet credentials must not be stored in environment variables; use NWC_URI_FILE')
   }
+  const nwcUri = nwcUriFile ? readNwcUriFile(nwcUriFile) : undefined
 
   const transport = process.env.TRANSPORT ?? 'stdio'
   if (transport !== 'stdio' && transport !== 'http') {

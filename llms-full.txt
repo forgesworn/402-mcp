@@ -71,7 +71,7 @@ src/
   wallet/
     types.ts               # WalletProvider interface
     resolve.ts             # Priority-ordered wallet resolution
-    nwc.ts                 # NWC (Nostr Wallet Connect) implementation
+    nwc.ts                 # @forgesworn/nwc-kit adapter + farrier proof check
     cashu.ts               # Cashu ecash melt implementation
     human.ts               # Human-in-the-loop (QR code + polling)
   l402/
@@ -149,7 +149,7 @@ tests/                     # Mirrors src/ structure
 - `method` (string, optional) — HTTP method (default: GET)
 - `headers` (object, optional) — additional headers
 - `body` (string, optional) — request body
-- `paymentMethod` (string, optional) — force a specific payment rail
+- `paymentMethod` (string, optional) — force a specific payer method
 
 **Behaviour:**
 1. Checks for existing credential for the origin
@@ -169,7 +169,7 @@ tests/                     # Mirrors src/ structure
 
 **Parameters:**
 - `invoice` (string, required) — BOLT11 invoice to pay
-- `paymentMethod` (string, optional) — force a specific payment rail
+- `paymentMethod` (string, optional) — force a specific payer method
 - `challengeId` (string, optional) — ID from a previous `l402-discover` to associate the payment
 
 **Returns:**
@@ -241,7 +241,7 @@ tests/                     # Mirrors src/ structure
 **Parameters:**
 - `url` (string, required) — toll-booth server URL
 - `amountSats` (number, optional) — specific tier to purchase
-- `paymentMethod` (string, optional) — force a specific payment rail
+- `paymentMethod` (string, optional) — force a specific payer method
 
 **Behaviour:** Fetches available tiers, purchases the specified tier, stores the credential with the credit balance.
 
@@ -294,7 +294,7 @@ Wallets are tried in order: NWC → Cashu → Human. The first wallet that succe
 
 | Wallet | Autonomy | Requirements | Speed |
 |--------|----------|-------------|-------|
-| NWC | Fully autonomous | `NWC_URI` env var pointing to a Lightning wallet | ~2-5 seconds |
+| NWC | Fully autonomous | `NWC_URI_FILE` pointing to a private 0600 bearer file | ~2-5 seconds |
 | Cashu | Fully autonomous | `CASHU_TOKENS` file with ecash tokens | ~3-8 seconds |
 | Human | Requires human | None — always available as fallback | Minutes |
 
@@ -328,6 +328,8 @@ All outbound HTTP requests pass through an SSRF guard:
 - Credentials encrypted with AES-256-GCM
 - Encryption key stored in OS keychain (macOS Keychain, Windows Credential Vault, Linux Secret Service) when available
 - Falls back to file-based key at `~/.402-mcp/encryption.key` with a console warning
+- NWC capability and response events authenticated with NIP-44 v2 and signatures
+- Returned NWC preimages verified against the challenged BOLT11 payment hash
 - Preimages validated as hex before storage to prevent header injection
 - Credential store path must be within the home directory (path traversal protection)
 
@@ -360,7 +362,7 @@ HTTP transport includes:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NWC_URI` | — | Nostr Wallet Connect URI for autonomous Lightning payments. Cleared from env after reading. |
+| `NWC_URI_FILE` | — | Path to a private 0600 file containing the NWC bearer URI. Raw NWC_URI is refused. |
 | `CASHU_TOKENS` | — | Path to Cashu token store file. Must be within home directory. |
 | `MAX_AUTO_PAY_SATS` | 1000 | Per-payment safety cap (satoshis). 0 disables autonomous payments. |
 | `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Rolling 60-second spend cap (satoshis). |

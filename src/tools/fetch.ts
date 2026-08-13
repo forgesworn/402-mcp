@@ -28,7 +28,7 @@ export interface FetchDeps {
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
   /** Fetch with transport selection and fallback. Called with multiple URLs (from search results). */
   transportFetch: (urls: string[], init: RequestInit) => Promise<Response>
-  payInvoice: (invoice: string, options?: { serverOrigin?: string }) => Promise<{ paid: boolean; preimage?: string; method: string }>
+  payInvoice: (invoice: string, options?: { serverOrigin?: string }) => Promise<{ paid: boolean; preimage?: string; method: string; outcome?: 'unknown'; reason?: string }>
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
   spendTracker: SpendTracker
@@ -211,14 +211,34 @@ export async function handleFetch(
           const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)
           if (ietfWithinLimit) {
             const ietfPayResult = await deps.payInvoice(ietfChallenge.invoice, { serverOrigin: origin })
-            if (!ietfPayResult.paid || !ietfPayResult.preimage) {
+            if (!ietfPayResult.paid && ietfPayResult.outcome !== 'unknown') {
               deps.spendTracker.unrecord(ietfChallenge.amountSats)
+            }
+            if (ietfPayResult.outcome === 'unknown') {
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    status: 402,
+                    protocol: 'ietf-payment',
+                    paymentState: 'unknown',
+                    costSats: ietfChallenge.amountSats,
+                    paymentHash: ietfChallenge.paymentHash,
+                    message: ietfPayResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
+                  }, null, 2),
+                }],
+                isError: true as const,
+              }
             }
             if (ietfPayResult.paid && ietfPayResult.preimage) {
               if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
-                deps.spendTracker.unrecord(ietfChallenge.amountSats)
                 return {
-                  content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Payment succeeded but preimage is invalid — refusing to send' }) }],
+                  content: [{ type: 'text' as const, text: JSON.stringify({
+                    error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
+                    paymentState: 'unknown',
+                    paymentHash: ietfChallenge.paymentHash,
+                    message: 'Reconcile the original invoice before retrying.',
+                  }) }],
                   isError: true as const,
                 }
               }
@@ -377,19 +397,39 @@ export async function handleFetch(
       const payResult = await deps.payInvoice(challenge.invoice, { serverOrigin: origin })
 
       // Roll back spend-limit reservation if payment failed
-      if (!payResult.paid || !payResult.preimage) {
+      if (!payResult.paid && payResult.outcome !== 'unknown') {
         deps.spendTracker.unrecord(decoded.costSats!)
+      }
+
+      if (payResult.outcome === 'unknown') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 402,
+              paymentState: 'unknown',
+              costSats: decoded.costSats,
+              paymentHash: decoded.paymentHash,
+              message: payResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
+            }, null, 2),
+          }],
+          isError: true as const,
+        }
       }
 
       if (payResult.paid && payResult.preimage) {
         // Validate preimage (hex) and macaroon (base64-safe) before storage
         // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
         if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
-          deps.spendTracker.unrecord(decoded.costSats!)
           return {
             content: [{
               type: 'text' as const,
-              text: JSON.stringify({ error: 'Payment succeeded but credential contains invalid characters — refusing to store' }),
+              text: JSON.stringify({
+                error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
+                paymentState: 'unknown',
+                paymentHash: decoded.paymentHash,
+                message: 'Reconcile the original invoice before retrying.',
+              }),
             }],
             isError: true as const,
           }

@@ -249,6 +249,66 @@ describe('handleBuyCredits', () => {
     expect(result.isError).toBe(true)
   })
 
+  it('retains budget and requires reconciliation when payment is unknown', async () => {
+    const tracker = new SpendTracker()
+    const result = await handleBuyCredits(
+      { url: 'https://api.example.com/data', amountSats: 5000 },
+      {
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ bolt11: 'lnbc5000n1test', macaroon: 'mac456' }),
+        }) as unknown as typeof fetch,
+        payInvoice: vi.fn().mockResolvedValue({
+          paid: false,
+          method: 'nwc',
+          outcome: 'unknown',
+          reason: 'Reconcile before retrying.',
+        }),
+        storeCredential: vi.fn(),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
+        maxAutoPaySats: 10000,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: tracker,
+        generateQr: vi.fn(),
+        walletMethod: () => 'nwc',
+      },
+    )
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', paymentHash: 'hash1' })
+    expect(parsed.message).toContain('Reconcile')
+    expect(result.isError).toBe(true)
+    expect(tracker.recentSpend()).toBe(5000)
+  })
+
+  it('treats a paid result without a preimage as unknown and retains the reservation', async () => {
+    const tracker = new SpendTracker()
+    const result = await handleBuyCredits(
+      { url: 'https://api.example.com/data', amountSats: 5000 },
+      {
+        fetchFn: vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ bolt11: 'lnbc5000n1test', macaroon: 'mac456' }),
+        }) as unknown as typeof fetch,
+        payInvoice: vi.fn().mockResolvedValue({ paid: true, method: 'nwc' }),
+        storeCredential: vi.fn(),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 5000, paymentHash: 'hash1', expiry: 3600 }),
+        maxAutoPaySats: 10000,
+        maxSpendPerMinuteSats: 10000,
+        spendTracker: tracker,
+        generateQr: vi.fn(),
+        walletMethod: () => 'nwc',
+      },
+    )
+
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', paymentHash: 'hash1' })
+    expect(parsed.message).toContain('Reconcile')
+    expect(result.isError).toBe(true)
+    expect(tracker.recentSpend()).toBe(5000)
+  })
+
   it('rejects invoice with amount different from requested amountSats', async () => {
     const mockFetch = vi.fn().mockResolvedValue({
       status: 200,
