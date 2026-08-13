@@ -13,6 +13,8 @@
     "./tools/*": "./build/tools/*.js",
     "./l402/*": "./build/l402/*.js",
     "./x402/*": "./build/x402/*.js",
+    "./xcashu/*": "./build/xcashu/*.js",
+    "./ietf-payment/*": "./build/ietf-payment/*.js",
     "./store/*": "./build/store/*.js",
     "./fetch/*": "./build/fetch/*.js",
     "./spend-tracker": "./build/spend-tracker.js"

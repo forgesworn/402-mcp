@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-const sections = ['dependencies', 'optionalDependencies', 'peerDependencies']
+const sections = ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies']
 const localProtocols = /^(?:file|link|workspace|portal|patch|catalog):/i
 const localPaths = /^(?:\.\.?[\\/]|[\\/]|[A-Za-z]:[\\/])/
 const invalid = []
