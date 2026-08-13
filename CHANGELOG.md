@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.0.0 (2026-08-13)
+
+### Breaking Changes
+
+- adopt nwc-kit with explicit payment uncertainty (#12)
+
+
+
 
 ### Features
 
