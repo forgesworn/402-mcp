@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.0.2 (2026-08-14)
+
+### Bug Fixes
+
+- replace legacy bolt11 decoder with farrier
+
+
+
 ## 4.0.1 (2026-08-14)
 
 ### Bug Fixes
