@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "@cashu/cashu-ts": "^3.6.1",
-    "@forgesworn/nwc-kit": "0.1.1",
+    "@forgesworn/nwc-kit": "0.1.6",
     "@modelcontextprotocol/ext-apps": "^1.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "cors": "^2.8.5",
