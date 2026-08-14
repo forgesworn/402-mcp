@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.0.1 (2026-08-14)
+
+### Bug Fixes
+
+- adopt nwc-kit 0.1.6 wallet compatibility
+
+
+
 ## 4.0.0 (2026-08-13)
 
 ### Breaking Changes
