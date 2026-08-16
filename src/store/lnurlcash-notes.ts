@@ -1,0 +1,159 @@
+import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, chmodSync } from 'node:fs'
+import { dirname } from 'node:path'
+import { getOrCreateKey, encrypt, decrypt, isEncrypted } from './encryption.js'
+
+/**
+ * - `live`        spendable, the mint recognises it
+ * - `provisional` written to disk before the split that creates it was sent,
+ *                 so a crash mid-split can't strand value at a hash whose
+ *                 preimage was never persisted. Resolved against the mint.
+ * - `melting`     handed to a melt whose outcome isn't known yet. Held back
+ *                 from spending until the mint says whether it burned.
+ */
+export type NoteState = 'live' | 'provisional' | 'melting'
+
+export interface StoredNote {
+  /**
+   * The bearer secret (LUD-25 `k1`), 64 hex chars. This IS the money: anyone
+   * holding it can spend the note. Never log it, never put it in an error.
+   */
+  secret: string
+  /** Base URL of the mint that honours this note. */
+  mint: string
+  amountMsat: number
+  state: NoteState
+  addedAt: string
+  /** For a provisional note, the secret of the note whose split created it. */
+  parent?: string
+}
+
+interface NoteStoreData {
+  notes: StoredNote[]
+}
+
+/** Encrypted persistent store for LNURLcash bearer notes. */
+export class LnurlcashNoteStore {
+  private data: NoteStoreData = { notes: [] }
+  private key: Buffer | null = null
+
+  constructor(private readonly path: string) {}
+
+  /** Initialises the encryption key and loads persisted notes. */
+  async init(): Promise<{ keySource: 'keychain' | 'file' }> {
+    const result = await getOrCreateKey()
+    this.key = result.key
+    this.load()
+    return { keySource: result.source }
+  }
+
+  list(): StoredNote[] {
+    return [...this.data.notes]
+  }
+
+  /** Spendable notes only, largest last. */
+  live(): StoredNote[] {
+    return this.data.notes.filter(n => n.state === 'live')
+  }
+
+  byState(state: NoteState): StoredNote[] {
+    return this.data.notes.filter(n => n.state === state)
+  }
+
+  find(secret: string): StoredNote | undefined {
+    return this.data.notes.find(n => n.secret === secret)
+  }
+
+  /** Total spendable value. Notes mid-split or mid-melt deliberately excluded. */
+  totalBalanceMsat(): number {
+    return this.live().reduce((sum, n) => sum + n.amountMsat, 0)
+  }
+
+  add(note: StoredNote): void {
+    this.data.notes.push(note)
+    this.save()
+  }
+
+  /**
+   * Adds several notes in one write. Used to persist both sides of a split
+   * before the split request goes out, so there is no window where only one
+   * child secret survives a crash.
+   */
+  addMany(notes: StoredNote[]): void {
+    if (notes.length === 0) return
+    this.data.notes.push(...notes)
+    this.save()
+  }
+
+  setState(secret: string, state: NoteState): void {
+    const note = this.find(secret)
+    if (!note || note.state === state) return
+    note.state = state
+    this.save()
+  }
+
+  setAmount(secret: string, amountMsat: number): void {
+    const note = this.find(secret)
+    if (!note || note.amountMsat === amountMsat) return
+    note.amountMsat = amountMsat
+    this.save()
+  }
+
+  /** Promotes a provisional note to spendable with its confirmed value. */
+  confirm(secret: string, amountMsat: number): void {
+    const note = this.find(secret)
+    if (!note) return
+    note.state = 'live'
+    note.amountMsat = amountMsat
+    delete note.parent
+    this.save()
+  }
+
+  remove(secret: string): void {
+    const before = this.data.notes.length
+    this.data.notes = this.data.notes.filter(n => n.secret !== secret)
+    if (this.data.notes.length !== before) this.save()
+  }
+
+  removeMany(secrets: string[]): void {
+    if (secrets.length === 0) return
+    const drop = new Set(secrets)
+    const before = this.data.notes.length
+    this.data.notes = this.data.notes.filter(n => !drop.has(n.secret))
+    if (this.data.notes.length !== before) this.save()
+  }
+
+  private load(): void {
+    if (!existsSync(this.path)) return
+    try {
+      const raw: unknown = JSON.parse(readFileSync(this.path, 'utf-8'))
+      if (isEncrypted(raw)) {
+        const json = decrypt(raw, this.key!)
+        const parsed = JSON.parse(json) as NoteStoreData
+        this.data = Array.isArray(parsed.notes) ? parsed : { notes: [] }
+      } else if (typeof raw === 'object' && raw !== null && Array.isArray((raw as NoteStoreData).notes)) {
+        // Legacy plaintext; migrate to encrypted on next write.
+        this.data = raw as NoteStoreData
+        this.save()
+      } else {
+        this.data = { notes: [] }
+      }
+    } catch { this.data = { notes: [] } }
+  }
+
+  private save(): void {
+    const dir = dirname(this.path)
+    if (!existsSync(dir)) {
+      mkdirSync(dir, { recursive: true, mode: 0o700 })
+      try { chmodSync(dir, 0o700) } catch { /* Windows safety net */ }
+    }
+    const json = JSON.stringify(this.data, null, 2)
+    const content = this.key
+      ? JSON.stringify(encrypt(json, this.key), null, 2)
+      : json
+
+    const tmpPath = this.path + '.tmp'
+    writeFileSync(tmpPath, content, { mode: 0o600 })
+    renameSync(tmpPath, this.path)
+    try { chmodSync(this.path, 0o600) } catch { /* Windows safety net */ }
+  }
+}

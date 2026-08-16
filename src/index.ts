@@ -5,6 +5,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { loadConfig } from './config.js'
 import { CredentialStore } from './store/credentials.js'
 import { CashuTokenStore } from './store/cashu-tokens.js'
+import { LnurlcashNoteStore } from './store/lnurlcash-notes.js'
 import { ChallengeCache } from './l402/challenge-cache.js'
 import { decodeBolt11 } from './l402/bolt11.js'
 import { parseL402Challenge } from './l402/parse.js'
@@ -12,6 +13,7 @@ import { detectServer } from './l402/detect.js'
 import { resolveWallet } from './wallet/resolve.js'
 import { createNwcWallet } from './wallet/nwc.js'
 import { createCashuWallet } from './wallet/cashu.js'
+import { createLnurlcashWallet } from './wallet/lnurlcash.js'
 import { createHumanWallet } from './wallet/human.js'
 import type { WalletMethod, WalletProvider } from './wallet/types.js'
 import { registerConfigTool } from './tools/config.js'
@@ -62,6 +64,8 @@ if (keySource === 'file') {
 }
 const cashuTokenStore = config.cashuTokensPath ? new CashuTokenStore(config.cashuTokensPath) : undefined
 if (cashuTokenStore) await cashuTokenStore.init()
+const lnurlcashNoteStore = config.lnurlcashNotesPath ? new LnurlcashNoteStore(config.lnurlcashNotesPath) : undefined
+if (lnurlcashNoteStore) await lnurlcashNoteStore.init()
 const challengeCache = new ChallengeCache()
 const spendTracker = new SpendTracker()
 
@@ -83,6 +87,13 @@ function withCashuLock<T>(fn: () => Promise<T>): Promise<T> {
 
 if (cashuTokenStore) {
   walletProviders.push(createCashuWallet(cashuTokenStore, withCashuLock))
+}
+
+// Bearer notes are consumed by split and melt, so store access is serialised
+// for the same reason Cashu's is: two concurrent payments must not both try to
+// spend the same note.
+if (lnurlcashNoteStore) {
+  walletProviders.push(createLnurlcashWallet(lnurlcashNoteStore))
 }
 
 // QR generation for human-in-the-loop (text for terminals, PNG for GUI clients)

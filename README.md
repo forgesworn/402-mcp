@@ -12,7 +12,7 @@
 L402 + x402 client MCP that gives AI agents economic agency. Discover, pay for, and consume any payment-gated API — no human registration, no API keys, no middlemen.
 
 - **Discover** paid APIs on Nostr — no URLs needed upfront
-- **Auto-pay** with Lightning (NWC), Cashu ecash, or human QR fallback
+- **Auto-pay** with Lightning (NWC), Cashu ecash, LNURLcash bearer notes, or human QR fallback
 - **Credentials cached and encrypted** at rest (AES-256-GCM)
 - **Works with any L402 server** — toll-booth, Aperture, or any future implementation
 
@@ -78,6 +78,7 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 |----------|---------|-------------|
 | `NWC_URI_FILE` | - | Path to a private `0600` file containing the NWC bearer URI |
 | `CASHU_TOKENS` | - | Path to Cashu token store file |
+| `LNURLCASH_NOTES` | - | Path to LNURLcash bearer note store file (LUD-25) |
 | `MAX_AUTO_PAY_SATS` | 1000 | Safety cap; payments above this require human confirmation |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |

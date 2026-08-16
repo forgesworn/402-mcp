@@ -89,7 +89,9 @@ All outbound HTTP uses the resilient fetch wrapper (`src/fetch/resilient-fetch.t
 - **Macaroon base64 validation** — macaroons are validated against a base64-safe character set before storage.
 - **Blocked hop-by-hop headers** — user-supplied headers on `l402-fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
 - **Zod schema validation** — all MCP tool inputs are validated with Zod schemas at the tool registration layer, rejecting malformed or unexpected input before any handler logic executes.
-- **Path traversal prevention** — `CREDENTIAL_STORE` and `CASHU_TOKENS` paths are validated to ensure they resolve within the user's home directory.
+- **Path traversal prevention** — `CREDENTIAL_STORE`, `CASHU_TOKENS` and `LNURLCASH_NOTES` paths are validated to ensure they resolve within the user's home directory.
+- **Bearer note handling** — an LNURLcash note secret *is* the money, so it is encrypted at rest alongside credentials, never accepted from an environment variable, and never included in an error or log line. Because note secrets travel in the query string, exceptions from the HTTP layer are caught and replaced rather than surfaced.
+- **Crash safety on split** — a split registers new notes at the mint by hash only; the mint never learns the secrets. Both child secrets are therefore persisted *before* the split request is sent, so a crash mid-split cannot strand value at a hash whose preimage was never written. Notes left provisional, or melting with an unknown outcome, are reconciled against the mint before the next payment.
 - **File-only NWC bearer** — raw `NWC_URI` values are refused. `NWC_URI_FILE`
   must reference a private, regular `0600` file no larger than 8192 bytes; the
   path is removed from `process.env` before later configuration can fail.

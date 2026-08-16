@@ -6,6 +6,7 @@ import { inspectNwcConnection } from '@forgesworn/nwc-kit'
 export interface L402Config {
   nwcUri: string | undefined
   cashuTokensPath: string | undefined
+  lnurlcashNotesPath: string | undefined
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
   credentialStorePath: string
@@ -106,6 +107,7 @@ export function loadConfig(): L402Config {
   const config: L402Config = {
     nwcUri,
     cashuTokensPath: process.env.CASHU_TOKENS,
+    lnurlcashNotesPath: process.env.LNURLCASH_NOTES,
     maxAutoPaySats: parseInt(process.env.MAX_AUTO_PAY_SATS ?? '1000', 10),
     maxSpendPerMinuteSats: parseInt(process.env.MAX_SPEND_PER_MINUTE_SATS ?? '10000', 10),
     credentialStorePath: process.env.CREDENTIAL_STORE ?? defaultCredentialStore,
@@ -147,6 +149,14 @@ export function loadConfig(): L402Config {
     const resolvedCashuPath = resolve(config.cashuTokensPath)
     if (!resolvedCashuPath.startsWith(homePrefix) && resolvedCashuPath !== home) {
       throw new Error(`CASHU_TOKENS must be within the home directory (got: ${config.cashuTokensPath})`)
+    }
+  }
+
+  // LNURLcash notes are bearer assets on disk — same home-directory constraint
+  if (config.lnurlcashNotesPath) {
+    const resolvedNotesPath = resolve(config.lnurlcashNotesPath)
+    if (!resolvedNotesPath.startsWith(homePrefix) && resolvedNotesPath !== home) {
+      throw new Error(`LNURLCASH_NOTES must be within the home directory (got: ${config.lnurlcashNotesPath})`)
     }
   }
 

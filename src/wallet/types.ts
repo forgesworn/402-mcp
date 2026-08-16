@@ -1,4 +1,4 @@
-export type WalletMethod = 'nwc' | 'cashu' | 'human'
+export type WalletMethod = 'nwc' | 'cashu' | 'lnurlcash' | 'human'
 
 export interface PayInvoiceOptions {
   serverOrigin?: string
