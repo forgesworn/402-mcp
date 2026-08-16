@@ -1,7 +1,8 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
 import { readFileSync, writeFileSync, openSync, closeSync, mkdirSync, chmodSync, statSync, constants as fsConstants } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
-import { homedir } from 'node:os'
+import { homedir, platform } from 'node:os'
 
 const SERVICE = '402-mcp'
 const ACCOUNT = 'encryption-key'
@@ -56,6 +57,16 @@ export function isEncrypted(data: unknown): data is EncryptedPayload {
   return HEX_RE.test(obj.iv) && HEX_RE.test(obj.tag) && HEX_RE.test(obj.ciphertext)
 }
 
+/** The existing file key, or null. Never creates one — used only for migration. */
+function readFallbackKeyIfPresent(): Buffer | null {
+  try {
+    const hex = readFileSync(FALLBACK_KEY_PATH, 'utf8').trim()
+    return /^[0-9a-f]{64}$/.test(hex) ? Buffer.from(hex, 'hex') : null
+  } catch {
+    return null
+  }
+}
+
 function loadOrCreateFallbackKey(): Buffer {
   // Try to create atomically first (O_CREAT | O_EXCL fails if file exists)
   mkdirSync(dirname(FALLBACK_KEY_PATH), { recursive: true, mode: 0o700 })
@@ -90,7 +101,74 @@ function loadOrCreateFallbackKey(): Buffer {
   return key
 }
 
+/**
+ * The macOS keychain via the `security` CLI. keytar is an optional dependency
+ * and a native module: it was archived upstream in 2023 and publishes no
+ * prebuilds for current Node, so on a modern runtime `import('keytar')` throws
+ * MODULE_NOT_FOUND for its .node binary and every key silently lands in the
+ * file fallback instead. The CLI ships with the OS, needs no build step, and
+ * cannot go stale against a Node release.
+ */
+const macKeychain = {
+  get(): string | null {
+    try {
+      // Exit code 44 (item not found) is the ordinary "no key yet" path.
+      return execFileSync('security', ['find-generic-password', '-s', SERVICE, '-a', ACCOUNT, '-w'], {
+        encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim() || null
+    } catch {
+      return null
+    }
+  },
+  set(hex: string): boolean {
+    try {
+      // The key goes in on stdin, never as an argument: argv is world-readable
+      // through ps, which would leak the very thing being protected. `-w` with
+      // no value prompts for the secret and then a confirmation, so it is
+      // written twice. -U updates an existing item rather than failing.
+      execFileSync('security', ['add-generic-password', '-s', SERVICE, '-a', ACCOUNT, '-U', '-w'], {
+        input: `${hex}\n${hex}\n`, stdio: ['pipe', 'ignore', 'ignore'],
+      })
+      return macKeychain.get() === hex
+    } catch {
+      return false
+    }
+  },
+}
+
 export async function getOrCreateKey(): Promise<KeyResult> {
+  if (platform() === 'darwin') {
+    // A file key outranks anything in the keychain, and the ordering matters
+    // more than it looks. loadOrCreateFallbackKey only ever runs after the
+    // keychain path has failed, so once that file exists every subsequent
+    // write is encrypted under it — including on a machine where the keychain
+    // used to work and holds a now-stale item from an older key. Preferring
+    // the keychain there would hand back a key that decrypts nothing, and the
+    // stores read an undecryptable file as an empty one and overwrite it,
+    // destroying stored credentials and bearer notes without an error.
+    const fileKey = readFallbackKeyIfPresent()
+    if (fileKey) {
+      const hex = fileKey.toString('hex')
+      if (macKeychain.get() !== hex && macKeychain.set(hex)) {
+        console.error(`Note: encryption key copied into the macOS keychain. ${FALLBACK_KEY_PATH} still holds the same key and can be deleted once you have confirmed things still open.`)
+      }
+      return { key: fileKey, source: 'keychain' }
+    }
+
+    const existing = macKeychain.get()
+    if (existing && /^[0-9a-f]{64}$/.test(existing)) {
+      return { key: Buffer.from(existing, 'hex'), source: 'keychain' }
+    }
+
+    const newKey = randomBytes(32)
+    // Only claim the keychain once the value reads back intact; a half-written
+    // item that fell through to the file would strand anything encrypted under
+    // whichever key actually got used.
+    if (macKeychain.set(newKey.toString('hex'))) {
+      return { key: newKey, source: 'keychain' }
+    }
+  }
+
   try {
     const keytar = await import('keytar')
     const existing = await keytar.default.getPassword(SERVICE, ACCOUNT)
