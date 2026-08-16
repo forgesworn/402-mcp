@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.1.2 (2026-08-16)
+
+### Bug Fixes
+
+- use the macOS keychain instead of falling back to a key file
+
+
+
 ## 4.1.1 (2026-08-16)
 
 ### Bug Fixes
