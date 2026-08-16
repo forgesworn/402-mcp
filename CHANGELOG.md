@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.1.1 (2026-08-16)
+
+### Bug Fixes
+
+- try the next note when one was already spent elsewhere
+
+
+
 ## 4.1.0 (2026-08-16)
 
 ### Features
