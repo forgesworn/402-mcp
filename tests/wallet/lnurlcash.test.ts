@@ -72,6 +72,51 @@ function withdrawFor(map: Record<string, number>) {
       : { status: 'ERROR', reason: 'Unknown or already spent note.' }
 }
 
+/**
+ * Stateful mock mint, keyed by note hash exactly as the real one is: it only
+ * ever sees `h`/`h2`, never the secrets behind them. Needed for any flow that
+ * melts a note a split just created, since those secrets don't exist until the
+ * provider generates them.
+ */
+function mockMint(initial: Record<string, number>, baseFeeMsat = 1000) {
+  const byHash = new Map<string, number>()
+  for (const [secret, amount] of Object.entries(initial)) byHash.set(computePaymentHash(secret), amount)
+
+  return {
+    handlers: {
+      withdraw: (secret: string) => {
+        const amount = byHash.get(computePaymentHash(secret))
+        return amount === undefined
+          ? { status: 'ERROR', reason: 'Unknown or already spent note.' }
+          : { tag: 'withdrawRequest', callback: `${MINT}/w/cb`, k1: secret, minWithdrawable: 0, maxWithdrawable: amount }
+      },
+      callback: (params: URLSearchParams) => {
+        const k1 = params.get('k1') ?? ''
+        const hash = computePaymentHash(k1)
+        const total = byHash.get(hash)
+        if (total === undefined) return { status: 'ERROR', reason: 'Unknown or already spent note.' }
+
+        const amount = params.get('amount')
+        if (amount !== null) {
+          const want = Number(amount)
+          const change = total - want - baseFeeMsat
+          if (change < 1) return { status: 'ERROR', reason: 'insufficient value' }
+          byHash.delete(hash)
+          byHash.set(params.get('h')!, want)
+          byHash.set(params.get('h2')!, change)
+          return { status: 'OK' }
+        }
+        // melt: burned once the payment settles, which the mock treats as now
+        byHash.delete(hash)
+        return { status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }
+      },
+      verify: () => ({ status: 'OK', settled: true, preimage: PREIMAGE }),
+    },
+    balanceOf: (secret: string) => byHash.get(computePaymentHash(secret)),
+    size: () => byHash.size,
+  }
+}
+
 beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), 'lnurlcash-'))
   store = freshStore()
@@ -286,6 +331,56 @@ describe('createLnurlcashWallet', () => {
     await wallet(store, impl).payInvoice(INV_1000)
 
     expect(store.find(orphan)).toBeUndefined()
+  })
+
+  it('falls through to the next note when one was spent elsewhere', async () => {
+    // The 5,000 was handed to someone else and is already gone at the mint.
+    const gone = 'ab'.repeat(32)
+    const good = 'cd'.repeat(32)
+    addNote(store, gone, 5000)
+    addNote(store, good, 6000)
+
+    const mint = mockMint({ [good]: 6000 })
+    const { impl } = fakeFetch(mint.handlers)
+
+    const res = await wallet(store, impl).payInvoice(INV_1000)
+
+    expect(res).toMatchObject({ paid: true, preimage: PREIMAGE })
+    // The dead note is dropped rather than left to fail again.
+    expect(store.find(gone)).toBeUndefined()
+    // 6000 split into 1000 paid + 4000 change, after the mint's 1 sat base fee.
+    expect(store.totalBalanceMsat()).toBe(4000)
+  })
+
+  it('prefers an exact-value note over splitting a larger one', async () => {
+    const exact = 'ab'.repeat(32)
+    const bigger = 'cd'.repeat(32)
+    addNote(store, bigger, 9000)
+    addNote(store, exact, 1000)
+
+    const { impl, seen } = fakeFetch({
+      withdraw: withdrawFor({ [exact]: 1000, [bigger]: 9000 }),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => ({ status: 'OK', settled: true, preimage: PREIMAGE }),
+    })
+
+    const res = await wallet(store, impl).payInvoice(INV_1000)
+
+    expect(res.paid).toBe(true)
+    expect(seen.filter(u => u.includes('amount='))).toHaveLength(0)
+    expect(store.find(bigger)?.amountMsat).toBe(9000)
+  })
+
+  it('says how many stale notes were dropped when none can pay', async () => {
+    addNote(store, 'ab'.repeat(32), 5000)
+    addNote(store, 'cd'.repeat(32), 6000)
+    const { impl } = fakeFetch({ withdraw: withdrawFor({}) })
+
+    const res = await wallet(store, impl).payInvoice(INV_1000)
+
+    expect(res.paid).toBe(false)
+    expect(res.reason).toMatch(/2 stored note\(s\) had already been spent elsewhere/)
+    expect(store.live()).toHaveLength(0)
   })
 
   it('never leaks a note secret in a failure reason', async () => {

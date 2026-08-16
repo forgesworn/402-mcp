@@ -52,6 +52,14 @@ function isError(res: unknown): res is LnurlError {
  */
 class MintRefused extends Error {}
 
+/**
+ * The mint doesn't recognise a note we thought we held. Expected, not
+ * exceptional: a bearer note can be spent by anyone holding a copy, so every
+ * local balance is a cache and the mint is the only authority. Signals "drop
+ * this one and try the next", never "fail the payment".
+ */
+class NoteGone extends Error {}
+
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
 }
@@ -128,7 +136,7 @@ export function createLnurlcashWallet(
     const resolved = await resolveNote(parent.mint, parent.secret)
     if (!resolved) {
       store.remove(parent.secret)
-      throw new MintRefused('Note is no longer valid at the mint')
+      throw new NoteGone('note not recognised by the mint')
     }
 
     const paySecret = generatePreimage()
@@ -178,7 +186,7 @@ export function createLnurlcashWallet(
     const resolved = await resolveNote(note.mint, note.secret)
     if (!resolved) {
       store.remove(note.secret)
-      return { paid: false, method: METHOD, reason: 'Note is no longer valid at the mint' }
+      throw new NoteGone('note not recognised by the mint')
     }
 
     // Held back from spending before the request: the mint marks it pending
@@ -274,33 +282,40 @@ export function createLnurlcashWallet(
 
     const live = store.live()
 
-    // An exact-value note melts directly, avoiding a split and its base fee.
-    const exact = live.find(n => n.amountMsat === needMsat)
-    if (exact) return melt(exact, invoice, decoded.paymentHashHex)
+    // Exact-value notes first: melting one directly avoids a split and its base
+    // fee. Then the smallest note that covers the amount, so large notes stay
+    // whole. Notes the mint no longer recognises are dropped as they are found
+    // and the next candidate is tried, since a stale local balance is normal
+    // for a bearer asset that someone else may already have spent.
+    const candidates = [
+      ...live.filter(n => n.amountMsat === needMsat),
+      ...live.filter(n => n.amountMsat > needMsat).sort((a, b) => a.amountMsat - b.amountMsat),
+    ]
 
-    // Otherwise the smallest note that can cover it, so large notes stay whole.
-    const candidates = live.filter(n => n.amountMsat > needMsat).sort((a, b) => a.amountMsat - b.amountMsat)
-    if (candidates.length === 0) {
-      const best = live.reduce((max, n) => Math.max(max, n.amountMsat), 0)
-      return {
-        paid: false,
-        method: METHOD,
-        reason: `No note large enough: need ${needMsat} msat, largest available is ${best} msat`,
+    let gone = 0
+    for (const candidate of candidates) {
+      try {
+        const exact = candidate.amountMsat === needMsat
+          ? candidate
+          : await split(candidate, needMsat)
+        return await melt(exact, invoice, decoded.paymentHashHex)
+      } catch (error) {
+        if (error instanceof NoteGone) { gone++; continue }
+        return {
+          paid: false,
+          method: METHOD,
+          reason: error instanceof MintRefused ? error.message : 'Could not split a note to the invoice amount',
+        }
       }
     }
 
-    let exactNote: StoredNote
-    try {
-      exactNote = await split(candidates[0], needMsat)
-    } catch (error) {
-      return {
-        paid: false,
-        method: METHOD,
-        reason: error instanceof MintRefused ? error.message : 'Could not split a note to the invoice amount',
-      }
+    const best = store.live().reduce((max, n) => Math.max(max, n.amountMsat), 0)
+    const staleNote = gone > 0 ? ` (${gone} stored note(s) had already been spent elsewhere and were dropped)` : ''
+    return {
+      paid: false,
+      method: METHOD,
+      reason: `No note large enough: need ${needMsat} msat, largest available is ${best} msat${staleNote}`,
     }
-
-    return melt(exactNote, invoice, decoded.paymentHashHex)
   }
 
   return {
