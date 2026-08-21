@@ -10,6 +10,7 @@ import type { ChallengeCache } from '../l402/challenge-cache.js'
 import type { WalletMethod } from '../wallet/types.js'
 import type { X402Challenge } from '../x402/parse.js'
 import type { XCashuChallenge } from '../xcashu/parse.js'
+import type { LnurlcashChallenge } from '../xlnurlcash/parse.js'
 import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
@@ -44,6 +45,12 @@ export interface FetchDeps {
   parseX402: (body: unknown) => X402Challenge | null
   /** Formats x402 challenge as a payment request for the agent. */
   formatX402: (challenge: X402Challenge) => { json: Record<string, unknown>; message: string }
+  /** Detects lnurlcash challenge from response headers. */
+  isLnurlcash: (headers: Headers) => boolean
+  /** Parses lnurlcash challenge from X-LNURLcash header value. */
+  parseLnurlcash: (header: string) => LnurlcashChallenge | null
+  /** Attempts lnurlcash payment. Returns a bearer note header or null. */
+  payLnurlcash: (challenge: LnurlcashChallenge) => Promise<{ header: string; amountSats: number; settle: (granted: boolean) => void } | null>
   /** Detects xcashu challenge from response headers. */
   isXCashu: (headers: Headers) => boolean
   /** Parses xcashu challenge from X-Cashu header value. */
@@ -143,7 +150,58 @@ export async function handleFetch(
     let challengeBody: Record<string, unknown> = {}
     try { challengeBody = await response.json() as Record<string, unknown> } catch { /* non-JSON 402 body */ }
 
-    // xcashu challenge: direct Cashu ecash payment (cheapest, fastest)
+    // lnurlcash challenge: a LUD-25 bearer note handed over in one header.
+    // Tried first because it is the cheapest rail on the client side: no
+    // Lightning hop, no mint swap, and the note is already money in hand.
+    const lnurlcashHeader = response.headers.get('x-lnurlcash')
+    if (lnurlcashHeader && deps.isLnurlcash(response.headers)) {
+      const lnurlcashChallenge = deps.parseLnurlcash(lnurlcashHeader)
+      if (lnurlcashChallenge) {
+        const lnurlcashAutoPay = args.autoPay ?? false
+        if (lnurlcashAutoPay && lnurlcashChallenge.amount <= deps.maxAutoPaySats) {
+          const lnurlcashWithinLimit = deps.spendTracker.tryRecord(lnurlcashChallenge.amount, deps.maxSpendPerMinuteSats)
+          if (lnurlcashWithinLimit) {
+            const lnurlcashResult = await deps.payLnurlcash(lnurlcashChallenge)
+            if (lnurlcashResult) {
+              const retryHeaders: Record<string, string> = { ...reqHeaders }
+              retryHeaders['X-LNURLcash'] = lnurlcashResult.header
+
+              const retryResponse = await doFetch(primaryUrl, {
+                method: args.method ?? 'GET',
+                headers: retryHeaders,
+                body: args.body,
+              })
+
+              // A granted request means the server settled the note by
+              // rotating it, so our copy is dead. A refusal leaves it held
+              // pending for the mint to rule on.
+              lnurlcashResult.settle(retryResponse.status !== 402)
+
+              const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
+              const retryBody = await retryResponse.text()
+              return {
+                content: [{
+                  type: 'text' as const,
+                  text: JSON.stringify({
+                    status: retryResponse.status,
+                    headers: filterResponseHeaders(retryResponse.headers),
+                    body: retryBody,
+                    creditsRemaining: retryBalance,
+                    satsPaid: lnurlcashResult.amountSats,
+                    paymentMethod: 'lnurlcash',
+                  }, null, 2),
+                }],
+              }
+            }
+            // No note could cover it, so release the reservation and let
+            // the other rails have a go.
+            deps.spendTracker.unrecord(lnurlcashChallenge.amount)
+          }
+        }
+      }
+    }
+
+    // xcashu challenge: direct Cashu ecash payment (no Lightning hop)
     const xcashuHeader = response.headers.get('x-cashu')
     if (xcashuHeader && deps.isXCashu(response.headers)) {
       const xcashuChallenge = deps.parseXCashu(xcashuHeader)
@@ -517,7 +575,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402-fetch',
     {
-      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier. For widget hosts, call l402-fetch-preview first to show a payment confirmation dialog before spending.',
+      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain + ecash and LUD-25 bearer notes). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier. For widget hosts, call l402-fetch-preview first to show a payment confirmation dialog before spending.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),

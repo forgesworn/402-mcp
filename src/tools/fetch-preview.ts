@@ -5,6 +5,7 @@ import type { ChallengeCache } from '../l402/challenge-cache.js'
 import type { L402Challenge } from '../l402/parse.js'
 import type { X402Challenge } from '../x402/parse.js'
 import type { XCashuChallenge } from '../xcashu/parse.js'
+import type { LnurlcashChallenge } from '../xlnurlcash/parse.js'
 import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { WalletMethod } from '../wallet/types.js'
@@ -24,6 +25,8 @@ export interface FetchPreviewDeps {
   parseX402: (body: unknown) => X402Challenge | null
   isXCashu: (headers: Headers) => boolean
   parseXCashu: (header: string) => XCashuChallenge | null
+  isLnurlcash: (headers: Headers) => boolean
+  parseLnurlcash: (header: string) => LnurlcashChallenge | null
   isIETFPayment: (headers: Headers) => boolean
   parseIETFPayment: (header: string) => IETFPaymentChallenge | null
   walletMethod: () => WalletMethod | undefined
@@ -79,7 +82,7 @@ export async function handleFetchPreview(
 
       const wwwAuth = response.headers.get('www-authenticate') ?? ''
 
-      // Priority: L402 > IETF Payment > xcashu > x402
+      // Priority: L402 > IETF Payment > lnurlcash > xcashu > x402
       // (L402 is the most common in our ecosystem)
 
       // Try IETF Payment first (newer standard)
@@ -135,6 +138,23 @@ export async function handleFetchPreview(
           message: decoded.costSats !== null
             ? `Payment of ${decoded.costSats} sats required to access ${new URL(url).hostname}. Confirm to proceed.`
             : `Payment required to access ${new URL(url).hostname}. Amount unknown.`,
+        }
+      }
+
+      // Try lnurlcash
+      const lnurlcashHeader = response.headers.get('x-lnurlcash')
+      if (lnurlcashHeader && deps.isLnurlcash(response.headers)) {
+        const lnurlcash = deps.parseLnurlcash(lnurlcashHeader)
+        if (lnurlcash) {
+          return {
+            status: 'preview' as const,
+            endpoint: url,
+            protocol: 'lnurlcash',
+            costSats: lnurlcash.amount,
+            paymentMethod: deps.walletMethod() ?? 'none',
+            widgetHint: 'payment-confirmation',
+            message: `Payment of ${lnurlcash.amount} sats required to access ${new URL(url).hostname}. Confirm to proceed.`,
+          }
         }
       }
 

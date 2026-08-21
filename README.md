@@ -122,22 +122,30 @@ Services can announce multiple endpoints for the **same service** (same pricing,
 
 ## Payment methods
 
-Three payer methods, tried in priority order:
+Four payer methods, tried in priority order:
 
 1. **NWC** (Nostr Wallet Connect) — fully autonomous; pays from your connected wallet
 2. **Cashu** — fully autonomous; melts ecash tokens to pay invoices
-3. **Human-in-the-loop** — presents QR code, polls for settlement
+3. **LNURLcash**: fully autonomous; melts LUD-25 bearer notes to pay invoices
+4. **Human-in-the-loop** — presents QR code, polls for settlement
 
 The agent can override the method per-call, or you can configure only the methods you want.
 
-`l402-fetch` handles four HTTP 402 challenge variants transparently:
+`l402-fetch` handles five HTTP 402 challenge variants transparently:
 
 | Protocol | Challenge header | Payment |
 |----------|-----------------|---------|
 | **L402** | `WWW-Authenticate: L402` | Lightning invoice via wallet stack |
 | **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment` | Lightning invoice via wallet stack |
+| **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1…` | Bearer note handed over directly (requires a note store) |
 | **xCashu** (NUT-18) | `X-Cashu: creqA…` | Ecash token sent directly (requires Cashu wallet) |
 | **x402** | `X-Payment-Required: x402` | On-chain EVM transfer; surfaced to human with EIP-681 deeplink |
+
+An LNURLcash challenge is tried first. A bearer note is already money in hand,
+so paying one costs no Lightning hop and no swap at the mint: the note goes
+straight into the retry header and the server settles it. When the price does
+not match a note exactly, one is split at the mint and the change stays in the
+store. If no note covers it, the other rails are tried as usual.
 
 ## Safety
 

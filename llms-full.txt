@@ -85,6 +85,9 @@ src/
   xcashu/
     parse.ts               # Detect X-Cashu header; parse NUT-18 payment request
     payment.ts             # Autonomous ecash payment: coin-select, send exact token amount
+  xlnurlcash/
+    parse.ts               # Detect X-LNURLcash header; parse the lnurlcash payment request
+    payment.ts             # Autonomous bearer-note payment: pick or split a note to the exact price
   ietf-payment/
     parse.ts               # Detect/parse WWW-Authenticate: Payment challenges (draft-ryan-httpauth-payment-01)
     credential.ts          # Build Authorization: Payment base64url credential after Lightning payment
@@ -277,25 +280,27 @@ The L402 protocol is an extension of HTTP 402 (Payment Required):
 
 ## Supported 402 Protocol Variants
 
-`l402-fetch` detects and handles four HTTP 402 challenge variants. Detection order in source: L402, x402, xCashu, IETF Payment.
+`l402-fetch` detects and handles five HTTP 402 challenge variants. Detection order in source: LNURLcash, x402, IETF Payment, L402, with xCashu tried immediately after LNURLcash.
 
 | Protocol | Detection | Credential sent | Autonomous? |
 |----------|-----------|----------------|-------------|
 | **L402** | `WWW-Authenticate: L402 macaroon=…, invoice=…` | `Authorization: L402 <macaroon>:<preimage>` | Yes (NWC or Cashu) |
 | **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment id=… method=lightning …` | `Authorization: Payment <base64url-json>` | Yes (NWC or Cashu) |
+| **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1<base64url>` | `X-LNURLcash: <bearer note URL>` | Yes (note store only) |
 | **xCashu** (NUT-18) | `X-Cashu: creqA<base64url>` | `X-Cashu: <cashuB-token>` | Yes (Cashu wallet only) |
 | **x402** | `X-Payment-Required: x402` + JSON body | Human presents EIP-681 deeplink | No — on-chain EVM; surfaced to human |
 
-xCashu uses coin selection via `wallet.send(amount, proofs, { includeFees: true })` and restores change proofs to the token store. IETF Payment decodes the base64url charge request to extract the BOLT11 invoice, then pays it through the normal wallet stack and wraps the preimage in a JSON credential.
+LNURLcash is tried before the others because a bearer note is already money in hand: the note URL goes straight into the retry header and the server settles it by rotating the note. A note worth exactly the price is used as it is; otherwise one is split at the mint and the change stays in the store. The chosen note is held pending until the outcome is known, so nothing else can spend it in the meantime. xCashu uses coin selection via `wallet.send(amount, proofs, { includeFees: true })` and restores change proofs to the token store. IETF Payment decodes the base64url charge request to extract the BOLT11 invoice, then pays it through the normal wallet stack and wraps the preimage in a JSON credential.
 
 ## Wallet Priority and Resolution
 
-Wallets are tried in order: NWC → Cashu → Human. The first wallet that succeeds is used.
+Wallets are tried in order: NWC → Cashu → LNURLcash → Human. The first wallet that succeeds is used.
 
 | Wallet | Autonomy | Requirements | Speed |
 |--------|----------|-------------|-------|
 | NWC | Fully autonomous | `NWC_URI_FILE` pointing to a private 0600 bearer file | ~2-5 seconds |
 | Cashu | Fully autonomous | `CASHU_TOKENS` file with ecash tokens | ~3-8 seconds |
+| LNURLcash | Fully autonomous | `LNURLCASH_NOTES` file with LUD-25 bearer notes | ~2-6 seconds |
 | Human | Requires human | None — always available as fallback | Minutes |
 
 The agent can force a specific method per-call using the `paymentMethod` parameter.

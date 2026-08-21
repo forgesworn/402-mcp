@@ -675,3 +675,152 @@ describe('handleFetch', () => {
     })
   })
 })
+
+describe('handleFetch lnurlcash rail', () => {
+  const CHALLENGE = { amount: 5, unit: 'sat' as const, mints: ['mint.example.com'] }
+  const NOTE = 'https://mint.example.com/w?k1=' + 'ab'.repeat(32) + '&amount=5000'
+
+  /** Deps with an lnurlcash rail that can always pay, plus a silent xcashu rail. */
+  function lnurlcashDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
+    return makeDeps({
+      isLnurlcash: vi.fn().mockReturnValue(true),
+      parseLnurlcash: vi.fn().mockReturnValue(CHALLENGE),
+      payLnurlcash: vi.fn().mockResolvedValue({ header: NOTE, amountSats: 5, settle: vi.fn() }),
+      isXCashu: vi.fn().mockReturnValue(false),
+      parseXCashu: vi.fn().mockReturnValue(null),
+      payXCashu: vi.fn().mockResolvedValue(null),
+      ...overrides,
+    })
+  }
+
+  it('pays a challenge with a bearer note and retries in one header', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+      .mockResolvedValueOnce(mockResponse(200, {}, 'the goods'))
+    const deps = lnurlcashDeps({ fetchFn: fetchMock as unknown as typeof fetch })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(fetchMock.mock.calls[1][1].headers['X-LNURLcash']).toBe(NOTE)
+    const parsed = JSON.parse(result.content[0].text)
+    expect(parsed.status).toBe(200)
+    expect(parsed.body).toBe('the goods')
+    expect(parsed.satsPaid).toBe(5)
+    expect(parsed.paymentMethod).toBe('lnurlcash')
+  })
+
+  it('is tried before xcashu, since a note needs no Lightning and no mint swap', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc', 'x-cashu': 'creqAabc' }))
+      .mockResolvedValueOnce(mockResponse(200, {}, 'the goods'))
+    const payXCashu = vi.fn().mockResolvedValue({ header: 'cashuBabc', amountSats: 5 })
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      isXCashu: vi.fn().mockReturnValue(true),
+      parseXCashu: vi.fn().mockReturnValue({ amount: 5, unit: 'sat', mints: ['https://mint.example.com'] }),
+      payXCashu,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(JSON.parse(result.content[0].text).paymentMethod).toBe('lnurlcash')
+    expect(payXCashu).not.toHaveBeenCalled()
+  })
+
+  it('falls through to xcashu when no note can cover the price', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc', 'x-cashu': 'creqAabc' }))
+      .mockResolvedValueOnce(mockResponse(200, {}, 'the goods'))
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash: vi.fn().mockResolvedValue(null),
+      isXCashu: vi.fn().mockReturnValue(true),
+      parseXCashu: vi.fn().mockReturnValue({ amount: 5, unit: 'sat', mints: ['https://mint.example.com'] }),
+      payXCashu: vi.fn().mockResolvedValue({ header: 'cashuBabc', amountSats: 5 }),
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(JSON.parse(result.content[0].text).paymentMethod).toBe('xcashu')
+  })
+
+  it('releases the spend reservation when no note can cover the price', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+    const spendTracker = new SpendTracker()
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash: vi.fn().mockResolvedValue(null),
+      spendTracker,
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(spendTracker.recentSpend()).toBe(0)
+  })
+
+  it('tells the payment path the note was settled when access is granted', async () => {
+    const settle = vi.fn()
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+      .mockResolvedValueOnce(mockResponse(200, {}, 'the goods'))
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash: vi.fn().mockResolvedValue({ header: NOTE, amountSats: 5, settle }),
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(settle).toHaveBeenCalledWith(true)
+  })
+
+  it('tells the payment path the note was refused when the server 402s again', async () => {
+    const settle = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash: vi.fn().mockResolvedValue({ header: NOTE, amountSats: 5, settle }),
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(settle).toHaveBeenCalledWith(false)
+  })
+
+  it('does not spend a note when autoPay is off', async () => {
+    const payLnurlcash = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+    const deps = lnurlcashDeps({ fetchFn: fetchMock as unknown as typeof fetch, payLnurlcash })
+
+    await handleFetch({ url: 'https://api.example.com/data' }, deps)
+
+    expect(payLnurlcash).not.toHaveBeenCalled()
+  })
+
+  it('does not spend a note priced above the auto-pay ceiling', async () => {
+    const payLnurlcash = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash,
+      maxAutoPaySats: 1,
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(payLnurlcash).not.toHaveBeenCalled()
+  })
+
+  it('ignores an unparseable challenge rather than guessing at a price', async () => {
+    const payLnurlcash = vi.fn()
+    const fetchMock = vi.fn().mockResolvedValue(mockResponse(402, { 'x-lnurlcash': 'lnurlcashreq1abc' }))
+    const deps = lnurlcashDeps({
+      fetchFn: fetchMock as unknown as typeof fetch,
+      payLnurlcash,
+      parseLnurlcash: vi.fn().mockReturnValue(null),
+    })
+
+    await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+
+    expect(payLnurlcash).not.toHaveBeenCalled()
+  })
+})
