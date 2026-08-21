@@ -87,6 +87,8 @@ src/
     payment.ts             # Autonomous ecash payment: coin-select, send exact token amount
   xlnurlcash/
     parse.ts               # Detect X-LNURLcash header; parse the lnurlcash payment request
+                           # (v/id/amount-as-string/currency/methodDetails.mints, per the
+                           #  conformance vectors; the older short form is still read)
     payment.ts             # Autonomous bearer-note payment: pick or split a note to the exact price
   ietf-payment/
     parse.ts               # Detect/parse WWW-Authenticate: Payment challenges (draft-ryan-httpauth-payment-01)

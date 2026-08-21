@@ -82,3 +82,69 @@ describe('parseLnurlcashChallenge', () => {
     expect(parseLnurlcashChallenge(encode({ a: 5, u: 'usd', m: ['mint.example.com'] }))).toBeNull()
   })
 })
+
+// The shape the conformance vectors pin and lnurlcash-kit encodes: amount as
+// a decimal string, the mints under methodDetails, with a version and a
+// handle on the charge.
+describe('parseLnurlcashChallenge, the settled request shape', () => {
+  const request = (over: Record<string, unknown> = {}): string =>
+    encode({
+      v: 1,
+      id: '0b86351d2cbdd44a',
+      amount: '21',
+      currency: 'sat',
+      methodDetails: { mints: ['mint.example.com'] },
+      ...over,
+    })
+
+  it('reads amount, currency and mints', () => {
+    expect(parseLnurlcashChallenge(request())).toEqual({
+      amount: 21,
+      unit: 'sat',
+      mints: ['mint.example.com'],
+    })
+  })
+
+  it('keeps every mint, including a host carrying a port', () => {
+    const parsed = parseLnurlcashChallenge(
+      request({ methodDetails: { mints: ['mint.example.com', '127.0.0.1:8899'] } }),
+    )
+    expect(parsed?.mints).toEqual(['mint.example.com', '127.0.0.1:8899'])
+  })
+
+  it('ignores anything else the request carries', () => {
+    const parsed = parseLnurlcashChallenge(
+      request({ memo: 'lunch', expires: 1787003600, to: 'npub1...' }),
+    )
+    expect(parsed?.amount).toBe(21)
+  })
+
+  it('refuses a currency it cannot price a note in', () => {
+    expect(parseLnurlcashChallenge(request({ currency: 'usd' }))).toBeNull()
+  })
+
+  it('refuses an amount that is not a whole number of sats', () => {
+    expect(parseLnurlcashChallenge(request({ amount: '2.5' }))).toBeNull()
+    expect(parseLnurlcashChallenge(request({ amount: '-1' }))).toBeNull()
+    expect(parseLnurlcashChallenge(request({ amount: '0' }))).toBeNull()
+    expect(parseLnurlcashChallenge(request({ amount: 'lots' }))).toBeNull()
+  })
+
+  it('refuses an amount too large to price in msat', () => {
+    expect(parseLnurlcashChallenge(request({ amount: String(Number.MAX_SAFE_INTEGER) }))).toBeNull()
+  })
+
+  it('refuses a request naming no mint it could pay', () => {
+    expect(parseLnurlcashChallenge(request({ methodDetails: { mints: [] } }))).toBeNull()
+    expect(parseLnurlcashChallenge(request({ methodDetails: {} }))).toBeNull()
+    expect(parseLnurlcashChallenge(request({ methodDetails: 'mint.example.com' }))).toBeNull()
+  })
+
+  it('still reads the short form that went out before the shape settled', () => {
+    expect(parseLnurlcashChallenge(encode({ a: 21, u: 'sat', m: ['mint.example.com'] }))).toEqual({
+      amount: 21,
+      unit: 'sat',
+      mints: ['mint.example.com'],
+    })
+  })
+})
