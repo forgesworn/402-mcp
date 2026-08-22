@@ -1,5 +1,15 @@
-import { generatePreimage, computePaymentHash, fetchJson } from 'farrier-kit'
-import type { LnurlcashNoteStore, StoredNote } from '../store/lnurlcash-notes.js'
+import { generatePreimage, computePaymentHash, fetchJson, verifyLud21 } from 'farrier-kit'
+import type { LnurlcashNoteStore, StoredNote, SettledMelt } from '../store/lnurlcash-notes.js'
+
+/** What a reconcile pass turned up that a caller may want to act on. */
+export interface ReconcileReport {
+  /**
+   * Melts that had already settled by the time we asked again, with the
+   * preimage recovered. Empty on a quiet pass. Each one is also written to
+   * the store, so nothing depends on the caller reading this.
+   */
+  recovered: SettledMelt[]
+}
 
 /**
  * Note operations shared by the wallet provider (which melts a note to pay a
@@ -43,6 +53,8 @@ export interface NoteOpsOptions {
   /** Per-request HTTP timeout. */
   httpTimeoutMs?: number
   fetchImpl?: typeof fetch
+  /** SSRF guard, matching farrier-kit's verifyLud21 hook. */
+  urlGuard?: (url: URL) => void | Promise<void>
 }
 
 export interface ResolvedNote {
@@ -64,7 +76,7 @@ export type NoteProbe =
 export interface NoteOps {
   probeNote(mint: string, secret: string): Promise<NoteProbe>
   resolveNote(mint: string, secret: string): Promise<ResolvedNote | null>
-  reconcile(): Promise<void>
+  reconcile(): Promise<ReconcileReport>
   split(parent: StoredNote, amountMsat: number): Promise<StoredNote>
 }
 
@@ -125,8 +137,10 @@ export function createNoteOps(store: LnurlcashNoteStore, options: NoteOpsOptions
    * split landed; one it doesn't means the split never happened. A melting note
    * the mint still honours means the spend failed and the mint restored it.
    */
-  async function reconcile(): Promise<void> {
-    for (const note of [...store.byState('provisional'), ...store.byState('melting')]) {
+  async function reconcile(): Promise<ReconcileReport> {
+    const recovered: SettledMelt[] = []
+
+    for (const note of store.byState('provisional')) {
       const resolved = await resolveNote(note.mint, note.secret)
       if (resolved) {
         store.confirm(note.secret, resolved.amountMsat)
@@ -136,6 +150,67 @@ export function createNoteOps(store: LnurlcashNoteStore, options: NoteOpsOptions
         store.remove(note.secret)
       }
     }
+
+    // A melting note is asked about in a different order, and the order is
+    // the whole fix. Previously the mint was asked whether it still had the
+    // note, and a "no" meant remove: but "no" is exactly what a SETTLED melt
+    // looks like, because settling burns the note. The preimage the payment
+    // bought went in the bin with it.
+    //
+    // So the verify URL is consulted FIRST, while the note is still on disk.
+    // Only once settlement has been ruled out is the note's own fate asked
+    // about, and even then an unrecognised note with an unsettled verify URL
+    // is left alone rather than dropped: that is a melt still in flight.
+    for (const note of store.byState('melting')) {
+      if (note.verifyUrl && note.paymentHashHex) {
+        let result
+        try {
+          result = await verifyLud21({
+            verifyUrl: note.verifyUrl,
+            paymentHashHex: note.paymentHashHex,
+            fetchImpl: options.fetchImpl,
+            timeoutMs: httpTimeoutMs,
+            ...(options.urlGuard ? { urlGuard: options.urlGuard } : {}),
+          })
+        } catch {
+          // The mint said nothing. Nothing said is not a verdict, and this
+          // note is holding a payment that may have landed.
+          continue
+        }
+
+        if (result?.settled) {
+          if (result.verified && result.preimage) {
+            const melt: SettledMelt = {
+              paymentHashHex: note.paymentHashHex,
+              preimage: result.preimage,
+              amountMsat: note.amountMsat,
+              mint: note.mint,
+              settledAt: new Date().toISOString(),
+            }
+            store.recordSettledMelt(melt)
+            recovered.push(melt)
+          }
+          // Settled either way, so the note is spent and must not come back.
+          store.remove(note.secret)
+          continue
+        }
+
+        // Not settled. If the mint still has the note the melt failed and it
+        // is spendable again; if it does not, the payment is still in flight
+        // and this note stays put with its URL for the next pass.
+        const resolved = await resolveNote(note.mint, note.secret)
+        if (resolved) store.confirm(note.secret, resolved.amountMsat)
+        continue
+      }
+
+      // No proof to consult - an older record, or a mint that offered no
+      // verify URL. Nothing better than the previous behaviour is available.
+      const resolved = await resolveNote(note.mint, note.secret)
+      if (resolved) store.confirm(note.secret, resolved.amountMsat)
+      else store.remove(note.secret)
+    }
+
+    return { recovered }
   }
 
   /**

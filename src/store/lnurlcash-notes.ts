@@ -25,10 +25,40 @@ export interface StoredNote {
   addedAt: string
   /** For a provisional note, the secret of the note whose split created it. */
   parent?: string
+  /**
+   * For a melting note, the mint's LUD-21 verify URL for the invoice being
+   * paid, and that invoice's payment hash.
+   *
+   * Written before the first poll rather than kept in a local variable,
+   * because losing it loses the payment. A melt that settles after the
+   * client stops waiting still spends the note; without this the only route
+   * back to the preimage is gone, and for L402 the preimage is not a
+   * receipt, it is the credential being bought. So: sats gone, note gone,
+   * no access, and no way to ask again.
+   */
+  verifyUrl?: string
+  paymentHashHex?: string
+}
+
+/**
+ * A melt this wallet paid for, kept after the note itself is gone.
+ *
+ * The preimage is the thing the payment bought. Reconciling a melt that
+ * settled late has to put it somewhere durable, or recovering it and then
+ * dropping it on the floor is the same outcome as never recovering it.
+ */
+export interface SettledMelt {
+  paymentHashHex: string
+  preimage: string
+  amountMsat: number
+  mint: string
+  settledAt: string
 }
 
 interface NoteStoreData {
   notes: StoredNote[]
+  /** Melts recovered after the fact. Absent in files written before this. */
+  settledMelts?: SettledMelt[]
 }
 
 /** Encrypted persistent store for LNURLcash bearer notes. */
@@ -112,6 +142,32 @@ export class LnurlcashNoteStore {
     const before = this.data.notes.length
     this.data.notes = this.data.notes.filter(n => n.secret !== secret)
     if (this.data.notes.length !== before) this.save()
+  }
+
+  /** Melts whose preimage was recovered, newest last. */
+  settledMelts(): SettledMelt[] {
+    return [...(this.data.settledMelts ?? [])]
+  }
+
+  /**
+   * Records a recovered preimage. Idempotent on payment hash: reconcile can
+   * run many times over the same late melt, and a duplicate here would look
+   * like a second payment.
+   */
+  recordSettledMelt(melt: SettledMelt): void {
+    const existing = this.data.settledMelts ?? []
+    if (existing.some(m => m.paymentHashHex === melt.paymentHashHex)) return
+    this.data.settledMelts = [...existing, melt]
+    this.save()
+  }
+
+  /** Attaches the proof a late melt can be recovered with, before polling starts. */
+  setMeltProof(secret: string, verifyUrl: string, paymentHashHex: string): void {
+    const note = this.find(secret)
+    if (!note) return
+    note.verifyUrl = verifyUrl
+    note.paymentHashHex = paymentHashHex
+    this.save()
   }
 
   removeMany(secrets: string[]): void {

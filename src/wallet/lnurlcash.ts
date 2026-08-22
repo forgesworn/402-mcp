@@ -46,7 +46,12 @@ export function createLnurlcashWallet(
   lock?: <T>(fn: () => Promise<T>) => Promise<T>,
 ): WalletProvider {
   const cfg = { ...DEFAULTS, ...options }
-  const ops = createNoteOps(store, { httpTimeoutMs: cfg.httpTimeoutMs, fetchImpl: cfg.fetchImpl })
+  const ops = createNoteOps(store, {
+    httpTimeoutMs: cfg.httpTimeoutMs,
+    fetchImpl: cfg.fetchImpl,
+    // reconcile polls verify URLs of its own now, so the guard has to reach it
+    ...(cfg.urlGuard ? { urlGuard: cfg.urlGuard } : {}),
+  })
 
   let internalLock: Promise<unknown> = Promise.resolve()
   const defaultLock = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -103,6 +108,13 @@ export function createLnurlcashWallet(
       }
     }
 
+    // Persisted before the first poll, not after the last one. A melt that
+    // settles late still spends the note, and the verify URL is the only
+    // route back to the preimage it bought. Keeping it in a local variable
+    // meant a timeout - or a crash, or the process being killed - threw the
+    // credential away while the sats were already gone.
+    store.setMeltProof(note.secret, res.verify, paymentHashHex)
+
     const deadline = Date.now() + cfg.meltTimeoutMs
     for (;;) {
       let result
@@ -119,10 +131,20 @@ export function createLnurlcashWallet(
       }
 
       if (result?.settled) {
-        store.remove(note.secret)
         if (result.verified && result.preimage) {
+          // Recorded before the note goes, so a crash between the two lines
+          // cannot lose what the payment bought.
+          store.recordSettledMelt({
+            paymentHashHex,
+            preimage: result.preimage,
+            amountMsat: note.amountMsat,
+            mint: note.mint,
+            settledAt: new Date().toISOString(),
+          })
+          store.remove(note.secret)
           return { paid: true, preimage: result.preimage, method: METHOD }
         }
+        store.remove(note.secret)
         // Settled per the mint, but unproven. Same stance as the NWC provider:
         // the note is spent either way, so it must not go back in the store.
         return {
@@ -138,7 +160,9 @@ export function createLnurlcashWallet(
           paid: false,
           method: METHOD,
           outcome: 'unknown',
-          reason: 'Melt did not settle before the timeout. The note is held pending and will be reconciled before the next payment.',
+          verifyUrl: res.verify,
+          reason:
+            'Melt did not settle before the timeout. The note is held with its verify URL, so a later reconcile can still recover the preimage if the payment lands.',
         }
       }
       await sleep(cfg.meltPollMs)
@@ -157,8 +181,20 @@ export function createLnurlcashWallet(
       return { paid: false, method: METHOD, reason: 'Amountless BOLT-11 invoices require an explicit amount and are refused' }
     }
 
+    // A reconcile can turn up a payment that landed after an earlier attempt
+    // gave up on it. That preimage is a credential somebody paid for, so it
+    // is said out loud here rather than only filed: the caller is a wallet
+    // asking to spend, and "by the way, that payment you wrote off did go
+    // through" changes what they do next.
+    let recoveredNote = ''
     try {
-      await ops.reconcile()
+      const report = await ops.reconcile()
+      if (report.recovered.length > 0) {
+        const each = report.recovered
+          .map(m => `${m.paymentHashHex.slice(0, 12)}… preimage ${m.preimage}`)
+          .join('; ')
+        recoveredNote = ` Also recovered ${report.recovered.length} earlier melt(s) that settled after being written off: ${each}.`
+      }
     } catch { /* best effort; selection below simply sees fewer notes */ }
 
     const live = store.live()
@@ -179,7 +215,10 @@ export function createLnurlcashWallet(
         const exact = candidate.amountMsat === needMsat
           ? candidate
           : await ops.split(candidate, needMsat)
-        return await melt(exact, invoice, decoded.paymentHashHex)
+        const result = await melt(exact, invoice, decoded.paymentHashHex)
+        return recoveredNote
+          ? { ...result, reason: `${result.reason ?? 'Paid.'}${recoveredNote}` }
+          : result
       } catch (error) {
         if (error instanceof NoteGone) { gone++; continue }
         return {
@@ -195,7 +234,7 @@ export function createLnurlcashWallet(
     return {
       paid: false,
       method: METHOD,
-      reason: `No note large enough: need ${needMsat} msat, largest available is ${best} msat${staleNote}`,
+      reason: `No note large enough: need ${needMsat} msat, largest available is ${best} msat${staleNote}${recoveredNote}`,
     }
   }
 

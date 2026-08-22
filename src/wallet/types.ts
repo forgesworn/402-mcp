@@ -11,6 +11,12 @@ export interface PaymentResult {
   reason?: string
   /** The request may have executed but settlement could not be proven. */
   outcome?: 'unknown'
+  /**
+   * Where settlement can still be proven later, for an `unknown` outcome
+   * that has one. A caller holding this can ask again rather than treating
+   * the payment as lost; reconcile also polls it on its own.
+   */
+  verifyUrl?: string
 }
 
 export interface WalletProvider {
