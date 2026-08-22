@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.2.1 (2026-08-22)
+
+### Bug Fixes
+
+- a melt that settles late no longer loses the preimage it bought (#21)
+
+
+
 ## 4.2.0 (2026-08-22)
 
 ### Features
