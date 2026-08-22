@@ -14,6 +14,7 @@
     "./l402/*": "./build/l402/*.js",
     "./x402/*": "./build/x402/*.js",
     "./xcashu/*": "./build/xcashu/*.js",
+    "./xlnurlcash/*": "./build/xlnurlcash/*.js",
     "./ietf-payment/*": "./build/ietf-payment/*.js",
     "./store/*": "./build/store/*.js",
     "./fetch/*": "./build/fetch/*.js",
@@ -81,7 +82,10 @@
     "ai-agent",
     "autonomous-payments",
     "macaroon",
-    "stablecoin"
+    "stablecoin",
+    "lnurlcash",
+    "lud-25",
+    "bearer-notes"
   ],
   "author": "forgesworn",
   "homepage": "https://github.com/forgesworn/402-mcp",

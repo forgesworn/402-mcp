@@ -257,7 +257,7 @@ export function registerPayTool(server: McpServer, deps: PayDeps): void {
         invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice to pay. Optional if paymentHash matches a cached challenge from l402-discover.'),
         macaroon: z.string().max(10_000).optional().describe('Macaroon from the L402 challenge. Optional if paymentHash matches a cached challenge.'),
         paymentHash: z.string().max(128).optional().describe('Payment hash to look up cached challenge from l402-discover.'),
-        method: z.enum(['nwc', 'cashu', 'human']).optional().describe('Payment method override. Defaults to wallet priority: NWC > Cashu > human.'),
+        method: z.enum(['nwc', 'cashu', 'lnurlcash', 'human']).optional().describe('Payment method override. Defaults to wallet priority: NWC > Cashu > LNURLcash > human.'),
       },
     },
     async (args) => handlePay(args, deps),

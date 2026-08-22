@@ -1,13 +1,20 @@
 import {
   tryDecodeBolt11,
   bolt11AmountMsats,
-  generatePreimage,
-  computePaymentHash,
   verifyLud21,
   fetchJson,
 } from 'farrier-kit'
 import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
 import type { LnurlcashNoteStore, StoredNote } from '../store/lnurlcash-notes.js'
+import {
+  createNoteOps,
+  callbackUrl,
+  isError,
+  MintRefused,
+  NoteGone,
+  type CallbackOk,
+  type LnurlError,
+} from './lnurlcash-ops.js'
 
 const METHOD = 'lnurlcash' as const
 
@@ -29,46 +36,8 @@ const DEFAULTS = {
   httpTimeoutMs: 8_000,
 }
 
-/** LUD-03/LUD-25 responses are either a success object or `{status:'ERROR'}`. */
-interface LnurlError { status: 'ERROR'; reason?: string }
-interface WithdrawRequest {
-  status?: string
-  tag?: string
-  callback?: string
-  k1?: string
-  minWithdrawable?: number
-  maxWithdrawable?: number
-}
-interface CallbackOk { status?: string; verify?: string; pr?: string; reason?: string }
-
-function isError(res: unknown): res is LnurlError {
-  return typeof res === 'object' && res !== null && (res as LnurlError).status === 'ERROR'
-}
-
-/**
- * Mint responses are the only thing safe to surface. Anything thrown by the
- * HTTP layer may carry a URL, and our URLs carry note secrets in the query
- * string, so exceptions are never stringified outward.
- */
-class MintRefused extends Error {}
-
-/**
- * The mint doesn't recognise a note we thought we held. Expected, not
- * exceptional: a bearer note can be spent by anyone holding a copy, so every
- * local balance is a cache and the mint is the only authority. Signals "drop
- * this one and try the next", never "fail the payment".
- */
-class NoteGone extends Error {}
-
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
-}
-
-/** Appends params to a callback URL that may already carry some. */
-function callbackUrl(base: string, params: Record<string, string>): string {
-  const url = new URL(base)
-  for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
-  return url.toString()
 }
 
 export function createLnurlcashWallet(
@@ -77,6 +46,7 @@ export function createLnurlcashWallet(
   lock?: <T>(fn: () => Promise<T>) => Promise<T>,
 ): WalletProvider {
   const cfg = { ...DEFAULTS, ...options }
+  const ops = createNoteOps(store, { httpTimeoutMs: cfg.httpTimeoutMs, fetchImpl: cfg.fetchImpl })
 
   let internalLock: Promise<unknown> = Promise.resolve()
   const defaultLock = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -92,98 +62,9 @@ export function createLnurlcashWallet(
       fetchImpl: cfg.fetchImpl,
     })
 
-  /**
-   * Reads a note's current value from the mint. `null` means the mint doesn't
-   * recognise it: unknown, already spent, or pending another operation.
-   */
-  async function resolveNote(mint: string, secret: string): Promise<{ amountMsat: number; callback: string } | null> {
-    let res: WithdrawRequest | LnurlError
-    try {
-      res = await get<WithdrawRequest | LnurlError>(callbackUrl(new URL('/w', mint).toString(), { k1: secret }))
-    } catch {
-      return null
-    }
-    if (isError(res) || typeof res.maxWithdrawable !== 'number' || typeof res.callback !== 'string') return null
-    return { amountMsat: res.maxWithdrawable, callback: res.callback }
-  }
-
-  /**
-   * Settles notes left in an indeterminate state by an earlier crash or a melt
-   * whose outcome never came back. A provisional note the mint knows about
-   * means its split landed; one it doesn't means the split never happened. A
-   * melting note the mint still honours means the payment failed and the mint
-   * restored it.
-   */
-  async function reconcile(): Promise<void> {
-    for (const note of [...store.byState('provisional'), ...store.byState('melting')]) {
-      const resolved = await resolveNote(note.mint, note.secret)
-      if (resolved) {
-        store.confirm(note.secret, resolved.amountMsat)
-        // A landed split burned its parent, whatever our local copy says.
-        if (note.parent) store.remove(note.parent)
-      } else {
-        store.remove(note.secret)
-      }
-    }
-  }
-
-  /**
-   * Splits `parent` into a note worth exactly `amountMsat` plus change, and
-   * returns the exact-value note. The mint requires a melt invoice to match
-   * the note value exactly, so this is how an arbitrary invoice gets paid.
-   */
-  async function split(parent: StoredNote, amountMsat: number): Promise<StoredNote> {
-    const resolved = await resolveNote(parent.mint, parent.secret)
-    if (!resolved) {
-      store.remove(parent.secret)
-      throw new NoteGone('note not recognised by the mint')
-    }
-
-    const paySecret = generatePreimage()
-    const changeSecret = generatePreimage()
-    const addedAt = new Date().toISOString()
-
-    // Persisted BEFORE the request, deliberately. The mint keys the new notes
-    // to hashes of these secrets and never learns the secrets themselves, so a
-    // crash between its swap and our write would destroy the value outright.
-    store.addMany([
-      { secret: paySecret, mint: parent.mint, amountMsat, state: 'provisional', parent: parent.secret, addedAt },
-      { secret: changeSecret, mint: parent.mint, amountMsat: 0, state: 'provisional', parent: parent.secret, addedAt },
-    ])
-
-    let res: CallbackOk | LnurlError
-    try {
-      res = await get<CallbackOk | LnurlError>(callbackUrl(resolved.callback, {
-        k1: parent.secret,
-        amount: String(amountMsat),
-        h: computePaymentHash(paySecret),
-        h2: computePaymentHash(changeSecret),
-      }))
-    } catch {
-      // Outcome unknown. Leave both children provisional; reconcile() decides
-      // on the next call, once the mint can be asked again.
-      throw new MintRefused('Split outcome unknown; it will be reconciled on the next attempt')
-    }
-
-    if (isError(res)) {
-      // A refusal is synchronous and burns nothing, so the children are dead.
-      store.removeMany([paySecret, changeSecret])
-      throw new MintRefused(res.reason ?? 'Mint refused the split')
-    }
-
-    store.remove(parent.secret)
-    store.confirm(paySecret, amountMsat)
-
-    const change = await resolveNote(parent.mint, changeSecret)
-    if (change) store.confirm(changeSecret, change.amountMsat)
-    else store.remove(changeSecret)
-
-    return store.find(paySecret)!
-  }
-
   /** Melts `note` against `invoice` and waits for cryptographic settlement proof. */
   async function melt(note: StoredNote, invoice: string, paymentHashHex: string): Promise<PaymentResult> {
-    const resolved = await resolveNote(note.mint, note.secret)
+    const resolved = await ops.resolveNote(note.mint, note.secret)
     if (!resolved) {
       store.remove(note.secret)
       throw new NoteGone('note not recognised by the mint')
@@ -277,7 +158,7 @@ export function createLnurlcashWallet(
     }
 
     try {
-      await reconcile()
+      await ops.reconcile()
     } catch { /* best effort; selection below simply sees fewer notes */ }
 
     const live = store.live()
@@ -297,7 +178,7 @@ export function createLnurlcashWallet(
       try {
         const exact = candidate.amountMsat === needMsat
           ? candidate
-          : await split(candidate, needMsat)
+          : await ops.split(candidate, needMsat)
         return await melt(exact, invoice, decoded.paymentHashHex)
       } catch (error) {
         if (error instanceof NoteGone) { gone++; continue }

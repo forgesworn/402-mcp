@@ -32,6 +32,8 @@ import { isX402Challenge, parseX402Challenge } from './x402/parse.js'
 import { formatX402PaymentRequest } from './x402/payment.js'
 import { isXCashuChallenge, parseXCashuChallenge } from './xcashu/parse.js'
 import { attemptXCashuPayment } from './xcashu/payment.js'
+import { isLnurlcashChallenge, parseLnurlcashChallenge } from './xlnurlcash/parse.js'
+import { attemptLnurlcashPayment } from './xlnurlcash/payment.js'
 import { isIETFPaymentChallenge, parseIETFPaymentChallenge } from './ietf-payment/parse.js'
 import { buildIETFPaymentCredential } from './ietf-payment/credential.js'
 import { createResilientFetch, withTransportFallback } from './fetch/resilient-fetch.js'
@@ -91,9 +93,17 @@ if (cashuTokenStore) {
 
 // Bearer notes are consumed by split and melt, so store access is serialised
 // for the same reason Cashu's is: two concurrent payments must not both try to
-// spend the same note.
+// spend the same note. The lock is shared with the lnurlcash HTTP rail, which
+// spends from the same store.
+let lnurlcashLock: Promise<unknown> = Promise.resolve()
+function withLnurlcashLock<T>(fn: () => Promise<T>): Promise<T> {
+  const result = lnurlcashLock.catch(() => {}).then(() => fn())
+  lnurlcashLock = result.catch(() => {})
+  return result
+}
+
 if (lnurlcashNoteStore) {
-  walletProviders.push(createLnurlcashWallet(lnurlcashNoteStore))
+  walletProviders.push(createLnurlcashWallet(lnurlcashNoteStore, {}, withLnurlcashLock))
 }
 
 // QR generation for human-in-the-loop (text for terminals, PNG for GUI clients)
@@ -218,6 +228,11 @@ registerFetchTool(server, {
   isX402: isX402Challenge,
   parseX402: parseX402Challenge,
   formatX402: formatX402PaymentRequest,
+  isLnurlcash: isLnurlcashChallenge,
+  parseLnurlcash: parseLnurlcashChallenge,
+  payLnurlcash: lnurlcashNoteStore
+    ? (challenge) => withLnurlcashLock(() => attemptLnurlcashPayment({ challenge, noteStore: lnurlcashNoteStore }))
+    : () => Promise.resolve(null),
   isXCashu: isXCashuChallenge,
   parseXCashu: parseXCashuChallenge,
   payXCashu: cashuTokenStore
@@ -285,6 +300,8 @@ registerFetchPreviewTool(server, {
   parseX402: parseX402Challenge,
   isXCashu: isXCashuChallenge,
   parseXCashu: parseXCashuChallenge,
+  isLnurlcash: isLnurlcashChallenge,
+  parseLnurlcash: parseLnurlcashChallenge,
   isIETFPayment: isIETFPaymentChallenge,
   parseIETFPayment: parseIETFPaymentChallenge,
   walletMethod: () => getWallet()?.method,
