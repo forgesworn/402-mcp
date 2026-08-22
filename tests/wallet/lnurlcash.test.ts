@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { computePaymentHash } from 'farrier-kit'
 import { createLnurlcashWallet } from '../../src/wallet/lnurlcash.js'
+import { createNoteOps } from '../../src/wallet/lnurlcash-ops.js'
 import { LnurlcashNoteStore } from '../../src/store/lnurlcash-notes.js'
 
 const MINT = 'https://mint.example.com'
@@ -415,5 +416,172 @@ describe('createLnurlcashWallet', () => {
     expect(callbacks).toBe(1)
     expect([a.paid, b.paid].filter(Boolean)).toHaveLength(1)
     expect([a.reason, b.reason].some(r => /No note large enough/.test(r ?? ''))).toBe(true)
+  })
+})
+
+// A melt that settles after the client stopped waiting.
+//
+// The payment lands, the note is spent, and the preimage is what the payment
+// bought - for L402 it is the credential, not a receipt. The verify URL used
+// to live only as a local variable inside melt(), so a timeout threw away the
+// only route back to it: sats gone, note gone, no access, and no way to ask
+// the mint again.
+describe('a melt that settles late', () => {
+  it('keeps the verify URL on disk, so the preimage is still reachable', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+
+    // Never settles while the client is waiting.
+    const { impl } = fakeFetch({
+      withdraw: withdrawFor({ ['aa'.repeat(32)]: 1000 }),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => ({ status: 'OK', settled: false }),
+    })
+
+    const result = await wallet(s, impl).payInvoice(INV_1000)
+    expect(result.paid).toBe(false)
+    expect(result.outcome).toBe('unknown')
+    // The route back, handed to the caller rather than dropped.
+    expect(result.verifyUrl).toBe(`${MINT}/verify/${HASH_1000}`)
+
+    // And persisted, so it survives the process going away entirely.
+    const held = s.byState('melting')
+    expect(held).toHaveLength(1)
+    expect(held[0]!.verifyUrl).toBe(`${MINT}/verify/${HASH_1000}`)
+    expect(held[0]!.paymentHashHex).toBe(HASH_1000)
+  })
+
+  it('recovers the preimage on the next reconcile, once the payment lands', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+
+    let settled = false
+    const { impl } = fakeFetch({
+      // Settling burned the note, so the mint no longer knows it. This is
+      // exactly the answer that used to mean "drop it".
+      withdraw: (secret: string) =>
+        settled
+          ? { status: 'ERROR', reason: 'Unknown or already spent note.' }
+          : withdrawFor({ ['aa'.repeat(32)]: 1000 })(secret),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => (settled ? { status: 'OK', settled: true, preimage: PREIMAGE } : { status: 'OK', settled: false }),
+    })
+
+    const w = wallet(s, impl)
+    const timedOut = await w.payInvoice(INV_1000)
+    expect(timedOut.outcome).toBe('unknown')
+
+    // The payment lands a moment after the client gave up.
+    settled = true
+
+    // Any later payment attempt reconciles first; this is that pass.
+    await w.payInvoice(INV_1000)
+
+    const recovered = s.settledMelts()
+    expect(recovered).toHaveLength(1)
+    expect(recovered[0]!.preimage).toBe(PREIMAGE)
+    expect(recovered[0]!.paymentHashHex).toBe(HASH_1000)
+    // The note really is gone: it was spent.
+    expect(s.byState('melting')).toHaveLength(0)
+    expect(s.live()).toHaveLength(0)
+  })
+
+  it('does not accept a preimage that is not the invoice\'s', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+
+    let settled = false
+    const { impl } = fakeFetch({
+      withdraw: (secret: string) =>
+        settled ? { status: 'ERROR', reason: 'gone' } : withdrawFor({ ['aa'.repeat(32)]: 1000 })(secret),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => (settled ? { status: 'OK', settled: true, preimage: WRONG_PREIMAGE } : { status: 'OK', settled: false }),
+    })
+
+    const w = wallet(s, impl)
+    await w.payInvoice(INV_1000)
+    settled = true
+    await w.payInvoice(INV_1000)
+
+    // Spent either way, but nothing provable was bought, so nothing is claimed.
+    expect(s.settledMelts()).toHaveLength(0)
+    expect(s.byState('melting')).toHaveLength(0)
+  })
+
+  it('gives the note back when the melt turns out to have failed', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+
+    // Verify says no, and the mint still has the note: the payment failed.
+    const { impl } = fakeFetch({
+      withdraw: withdrawFor({ ['aa'.repeat(32)]: 1000 }),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => ({ status: 'OK', settled: false }),
+    })
+
+    const w = wallet(s, impl)
+    await w.payInvoice(INV_1000)
+    expect(s.byState('melting')).toHaveLength(1)
+
+    // reconcile directly: paying again would restore the note and then melt
+    // it straight back, which tells you nothing about the restore.
+    const report = await createNoteOps(s, { fetchImpl: impl }).reconcile()
+    expect(report.recovered).toHaveLength(0)
+    // Back in circulation rather than written off.
+    expect(s.live().some(n => n.amountMsat === 1000)).toBe(true)
+    expect(s.byState('melting')).toHaveLength(0)
+  })
+
+  it('holds a note whose mint cannot be reached, rather than dropping it', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+
+    let reachable = true
+    const { impl } = fakeFetch({
+      withdraw: withdrawFor({ ['aa'.repeat(32)]: 1000 }),
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => {
+        if (!reachable) throw new Error('network down')
+        return { status: 'OK', settled: false }
+      },
+    })
+
+    const w = wallet(s, impl)
+    await w.payInvoice(INV_1000)
+    reachable = false
+
+    await w.payInvoice(INV_1000).catch(() => {})
+    // Nothing said is not a verdict. The note and its proof stay put.
+    const held = s.byState('melting')
+    expect(held).toHaveLength(1)
+    expect(held[0]!.verifyUrl).toBe(`${MINT}/verify/${HASH_1000}`)
+  })
+})
+
+describe('a recovered melt is said out loud', () => {
+  it('tells the caller about a payment that landed after it was written off', async () => {
+    const s = freshStore()
+    addNote(s, 'aa'.repeat(32), 1000)
+    addNote(s, 'cc'.repeat(32), 5000)
+
+    let settled = false
+    const { impl } = fakeFetch({
+      withdraw: (secret: string) => {
+        if (secret === 'aa'.repeat(32) && settled) return { status: 'ERROR', reason: 'gone' }
+        return withdrawFor({ ['aa'.repeat(32)]: 1000, ['cc'.repeat(32)]: 5000 })(secret)
+      },
+      callback: () => ({ status: 'OK', verify: `${MINT}/verify/${HASH_1000}` }),
+      verify: () => (settled ? { status: 'OK', settled: true, preimage: PREIMAGE } : { status: 'OK', settled: false }),
+    })
+
+    const w = wallet(s, impl)
+    const first = await w.payInvoice(INV_1000)
+    expect(first.outcome).toBe('unknown')
+
+    settled = true
+    const second = await w.payInvoice(INV_1000)
+    // Whatever became of this attempt, the earlier one is reported.
+    expect(second.reason).toContain('recovered 1 earlier melt')
+    expect(second.reason).toContain(PREIMAGE)
   })
 })
