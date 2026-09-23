@@ -23,6 +23,8 @@ class WalletTransport implements NwcTransport {
   preimage = 'aa'.repeat(32)
   respond = true
   walletError: { code: string; message: string } | undefined
+  methods = 'pay_invoice lookup_invoice'
+  lookupResult: Record<string, unknown> = {}
   #handler: ((event: NwcEvent) => void) | undefined
 
   get uri(): string {
@@ -34,7 +36,7 @@ class WalletTransport implements NwcTransport {
       kind: 13_194,
       created_at: 1_700_000_000,
       tags: [['encryption', 'nip44_v2']],
-      content: 'pay_invoice',
+      content: this.methods,
     }, this.walletSecret) as NwcEvent]
   }
 
@@ -49,14 +51,16 @@ class WalletTransport implements NwcTransport {
 
   async publish(relays: readonly string[], request: NwcEvent): Promise<NwcPublishResult[]> {
     const conversationKey = nip44.v2.utils.getConversationKey(this.walletSecret, request.pubkey)
+    const { method } = JSON.parse(nip44.v2.decrypt(request.content, conversationKey)) as { method: string }
+    const result = method === 'lookup_invoice' ? this.lookupResult : { preimage: this.preimage }
     const response = finalizeEvent({
       kind: 23_195,
       created_at: request.created_at + 1,
       tags: [['p', request.pubkey], ['e', request.id]],
       content: nip44.v2.encrypt(JSON.stringify({
-        result_type: 'pay_invoice',
+        result_type: method,
         error: this.walletError ?? null,
-        ...(!this.walletError ? { result: { preimage: this.preimage } } : {}),
+        ...(!this.walletError ? { result } : {}),
       }), conversationKey),
     }, this.walletSecret) as NwcEvent
     if (this.respond) queueMicrotask(() => this.#handler?.(response))
@@ -118,7 +122,7 @@ describe('createNwcWallet', () => {
       paid: false,
       method: 'nwc',
       outcome: 'unknown',
-      reason: expect.stringContaining('Reconcile'),
+      reason: expect.stringContaining('l402-reconcile'),
     })
     expect(JSON.stringify(result)).not.toContain(CLIENT_SECRET)
   })
@@ -129,5 +133,34 @@ describe('createNwcWallet', () => {
     const result = await createNwcWallet(transport.uri, { transport }).payInvoice(SETTLED_INVOICE)
     expect(result).toEqual({ paid: false, method: 'nwc', reason: 'Daily budget exhausted' })
     expect(JSON.stringify(result)).not.toContain(CLIENT_SECRET)
+  })
+
+  describe('lookupPayment', () => {
+    const HASH = 'e0e77a507412b120f6ede61f62295b1a7b2ff19d3dcc8f7253e51663470c888e'
+
+    it('reports settled only with a preimage that hashes to the payment hash', async () => {
+      const transport = new WalletTransport()
+      transport.lookupResult = { type: 'outgoing', state: 'settled', payment_hash: HASH, preimage: 'aa'.repeat(32) }
+      await expect(createNwcWallet(transport.uri, { transport }).lookupPayment!(HASH))
+        .resolves.toEqual({ state: 'settled', preimage: 'aa'.repeat(32) })
+
+      transport.lookupResult = { type: 'outgoing', state: 'settled', payment_hash: HASH, preimage: 'ff'.repeat(32) }
+      await expect(createNwcWallet(transport.uri, { transport }).lookupPayment!(HASH))
+        .resolves.toMatchObject({ state: 'pending' })
+    })
+
+    it('reports a failed or expired payment as failed', async () => {
+      const transport = new WalletTransport()
+      transport.lookupResult = { type: 'outgoing', state: 'failed', payment_hash: HASH }
+      await expect(createNwcWallet(transport.uri, { transport }).lookupPayment!(HASH))
+        .resolves.toMatchObject({ state: 'failed' })
+    })
+
+    it('stays pending when the wallet cannot look payments up', async () => {
+      const transport = new WalletTransport()
+      transport.methods = 'pay_invoice'
+      await expect(createNwcWallet(transport.uri, { transport }).lookupPayment!(HASH))
+        .resolves.toMatchObject({ state: 'pending', reason: expect.stringContaining('lookup_invoice') })
+    })
   })
 })

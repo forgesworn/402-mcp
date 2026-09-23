@@ -30,6 +30,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     isIETFPayment: vi.fn().mockReturnValue(false),
     parseIETFPayment: vi.fn().mockReturnValue(null),
     buildIETFCredential: vi.fn().mockReturnValue(''),
+    pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([]) },
     ...overrides,
   }
 }

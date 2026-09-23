@@ -30,6 +30,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     isIETFPayment: vi.fn().mockReturnValue(false),
     parseIETFPayment: vi.fn().mockReturnValue(null),
     buildIETFCredential: vi.fn().mockReturnValue(''),
+    pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([]) },
     ...overrides,
   }
 }
@@ -265,6 +266,58 @@ describe('handleFetch security', () => {
       expect(JSON.parse(result.content[0].text).paymentState).toBe(state)
       expect(deps.payInvoice).toHaveBeenCalledTimes(1)
       expect(deps.parseL402).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('unknown outcomes pause auto-pay to the service', () => {
+    const HASH = 'ab'.repeat(32)
+
+    it('records an unknown L402 payment against every candidate origin', async () => {
+      const add = vi.fn()
+      const deps = makeDeps({
+        fetchFn: vi.fn() as unknown as typeof fetch,
+        transportFetch: vi.fn().mockResolvedValue(mockResponse(402, {
+          'www-authenticate': 'L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+        }, '{}')) as unknown as FetchDeps['transportFetch'],
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: HASH, expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'nwc', outcome: 'unknown' }),
+        pendingPayments: { add, unresolvedFor: vi.fn().mockReturnValue([]) },
+      })
+      const result = await handleFetch({
+        url: 'https://api.example.com/data',
+        urls: ['https://api.example.com/data', 'http://abc.onion/data'],
+        pubkey: 'pk1',
+        autoPay: true,
+      }, deps)
+      expect(JSON.parse(result.content[0].text).message).toContain('l402-reconcile')
+      expect(add).toHaveBeenCalledWith(expect.objectContaining({
+        paymentHash: HASH,
+        origins: ['https://api.example.com', 'http://abc.onion'],
+        pubkey: 'pk1',
+        protocol: 'l402',
+        macaroon: 'bWFjMQ==',
+      }))
+    })
+
+    it('refuses to auto-pay while an earlier payment to the service is unresolved', async () => {
+      const unresolvedFor = vi.fn().mockReturnValue([{ paymentHash: HASH }])
+      const deps = makeDeps({
+        fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+          'www-authenticate': 'L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+        }, '{}')) as unknown as typeof fetch,
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'cd'.repeat(32), expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }),
+        pendingPayments: { add: vi.fn(), unresolvedFor },
+      })
+      const result = await handleFetch({ url: 'https://api.example.com/data', pubkey: 'pk1', autoPay: true }, deps)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(result.isError).toBe(true)
+      expect(parsed).toMatchObject({ paymentState: 'blocked', unresolvedPayments: [HASH] })
+      expect(parsed.message).toContain('l402-reconcile')
+      expect(unresolvedFor).toHaveBeenCalledWith(['https://api.example.com'], 'pk1')
+      expect(deps.payInvoice).not.toHaveBeenCalled()
     })
   })
 

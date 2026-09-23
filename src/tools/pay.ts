@@ -5,7 +5,10 @@ import type { WalletMethod, WalletProvider } from '../wallet/types.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { SpendTracker } from '../spend-tracker.js'
+import type { PendingPayment } from '../store/pending-payments.js'
 import { safeErrorMessage } from './safe-error.js'
+
+const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
 
 export interface PayDeps {
   cache: ChallengeCache
@@ -16,6 +19,11 @@ export interface PayDeps {
   spendTracker: SpendTracker
   decodeBolt11: (invoice: string) => DecodedInvoice
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
+  /** Ledger of unknown-outcome payments; any entry for a service pauses payment to it. */
+  pendingPayments: {
+    add(entry: PendingPayment): void
+    unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
+  }
 }
 
 /** Pays a Lightning invoice using the configured wallet priority (NWC, Cashu, human). */
@@ -102,6 +110,37 @@ export async function handlePay(
     }
   }
 
+  const origin = cachedUrl ? new URL(cachedUrl).origin : undefined
+  const unresolved = origin ? deps.pendingPayments.unresolvedFor([origin]) : []
+  if (unresolved.length > 0 && wallet.method !== 'human') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          paid: false,
+          paymentState: 'blocked',
+          unresolvedPayments: unresolved.map(p => p.paymentHash),
+          reason: `Payment to this service is paused: ${unresolved.length} earlier payment(s) to it have an unknown outcome. Call l402-reconcile with each paymentHash first.`,
+        }),
+      }],
+      isError: true as const,
+    }
+  }
+
+  const recordUnknown = (method: string) => {
+    if (!decoded.paymentHash) return
+    deps.pendingPayments.add({
+      paymentHash: decoded.paymentHash,
+      origins: origin ? [origin] : [],
+      invoice,
+      costSats,
+      protocol: 'l402',
+      method,
+      macaroon,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
   // Atomic spend-limit check before payment
   if (!deps.spendTracker.tryRecord(costSats, deps.maxSpendPerMinuteSats)) {
     return {
@@ -114,8 +153,6 @@ export async function handlePay(
   }
 
   try {
-    const origin = cachedUrl ? new URL(cachedUrl).origin : undefined
-
     // If we have a payment page URL (toll-booth), poll it directly for settlement.
     // This avoids the human wallet's long timeout — the user already paid via the page.
     if (cachedPaymentUrl && wallet.method === 'human') {
@@ -170,7 +207,7 @@ export async function handlePay(
           text: JSON.stringify({
             paid: false,
             paymentState: 'unknown',
-            reason: 'Payment not confirmed after 120s. It may still have settled; reconcile this payment before retrying. If you selected a different tier on the payment page, paste the L402 token here.',
+            reason: 'Payment not confirmed after 120s. It may still have settled: call l402-pay again with the same paymentHash to keep checking. If you selected a different tier on the payment page, store the L402 token it shows with l402-store-token.',
             paymentUrl: cachedPaymentUrl,
           }),
         }],
@@ -185,6 +222,10 @@ export async function handlePay(
       deps.spendTracker.unrecord(costSats)
     }
 
+    if (result.outcome === 'unknown' || (result.paid && !result.preimage)) {
+      recordUnknown(result.method)
+    }
+
     if (result.paid && !result.preimage) {
       return {
         content: [{
@@ -194,7 +235,7 @@ export async function handlePay(
             paymentState: 'unknown',
             credentialsStored: false,
             method: result.method,
-            reason: 'The wallet reported payment without a settlement preimage. Reconcile the original invoice before retrying.',
+            reason: `The wallet reported payment without a settlement preimage. ${RECONCILE_HINT}`,
           }, null, 2),
         }],
         isError: true as const,
@@ -232,13 +273,15 @@ export async function handlePay(
       ...(result.outcome === 'unknown' ? { isError: true as const } : {}),
     }
   } catch (err) {
+    recordUnknown(wallet.method)
     return {
       content: [{
         type: 'text' as const,
         text: JSON.stringify({
           error: safeErrorMessage(err),
           paymentState: 'unknown',
-          message: 'The payment attempt threw after budget reservation. Reconcile the original invoice before retrying.',
+          paymentHash: decoded.paymentHash,
+          message: `The payment attempt threw after budget reservation. ${RECONCILE_HINT}`,
         }),
       }],
       isError: true as const,

@@ -28,6 +28,7 @@ const mockWalletInstance = {
   createMeltQuote: vi.fn(),
   send: vi.fn(),
   meltProofs: vi.fn(),
+  checkMeltQuoteBolt11: vi.fn(),
 }
 
 vi.mock('@cashu/cashu-ts', () => {
@@ -365,5 +366,36 @@ describe('createCashuWallet', () => {
     const result = await createCashuWallet(store).payInvoice('lnbc100n1test')
     expect(result.paid).toBe(false)
     expect(store.consumeFirst).not.toHaveBeenCalled()
+  })
+
+  describe('lookupPayment on a reserved melt', () => {
+    function reservedStore() {
+      const store = mockTokenStore([])
+      const reserved = { token: 'cashuBr', mint: 'https://mint.example.com', amountSats: 128, addedAt: '', paymentHash: PAYMENT_HASH, quoteId: 'q1', reservedAt: '' }
+      Object.assign(store, {
+        getReserved: vi.fn((h: string) => (h === PAYMENT_HASH ? reserved : undefined)),
+        releaseReserved: vi.fn(),
+        dropReserved: vi.fn(),
+      })
+      return store as CashuTokenStore & { releaseReserved: ReturnType<typeof vi.fn>; dropReserved: ReturnType<typeof vi.fn> }
+    }
+
+    it('releases the proofs when the mint says UNPAID', async () => {
+      const store = reservedStore()
+      mockWalletInstance.checkMeltQuoteBolt11.mockResolvedValue({ state: 'UNPAID' })
+      await expect(createCashuWallet(store).lookupPayment!(PAYMENT_HASH)).resolves.toMatchObject({ state: 'failed' })
+      expect(store.releaseReserved).toHaveBeenCalledWith(PAYMENT_HASH)
+    })
+
+    it('settles and forgets the proofs only with a matching preimage', async () => {
+      const store = reservedStore()
+      mockWalletInstance.checkMeltQuoteBolt11.mockResolvedValue({ state: 'PAID', payment_preimage: null })
+      await expect(createCashuWallet(store).lookupPayment!(PAYMENT_HASH)).resolves.toMatchObject({ state: 'pending' })
+      expect(store.dropReserved).not.toHaveBeenCalled()
+
+      mockWalletInstance.checkMeltQuoteBolt11.mockResolvedValue({ state: 'PAID', payment_preimage: PREIMAGE })
+      await expect(createCashuWallet(store).lookupPayment!(PAYMENT_HASH)).resolves.toEqual({ state: 'settled', preimage: PREIMAGE })
+      expect(store.dropReserved).toHaveBeenCalledWith(PAYMENT_HASH)
+    })
   })
 })

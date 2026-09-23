@@ -1,5 +1,5 @@
 import { tryDecodeBolt11, verifyPreimage } from 'farrier-kit'
-import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
 import type { CashuTokenStore } from '../store/cashu-tokens.js'
 
 type Proof = { id: string; amount: number; secret: string; C: string }
@@ -164,6 +164,42 @@ export function createCashuWallet(
     payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult> {
       return withLock(() => doPayInvoice(invoice, tokenStore, options))
     },
+
+    lookupPayment(paymentHash: string): Promise<PaymentLookup> {
+      return withLock(() => lookupMelt(paymentHash, tokenStore))
+    },
+  }
+}
+
+/**
+ * Asks the mint about a melt whose proofs were reserved. An UNPAID quote
+ * returns the proofs to the spendable pool; a PAID one with a matching
+ * preimage forgets them.
+ */
+async function lookupMelt(paymentHash: string, tokenStore: CashuTokenStore): Promise<PaymentLookup> {
+  const reserved = tokenStore.getReserved(paymentHash)
+  if (!reserved) {
+    return { state: 'pending', reason: 'No reserved Cashu melt matches this payment hash, so the mint cannot be asked about it.' }
+  }
+  try {
+    const { Wallet } = await import('@cashu/cashu-ts')
+    const wallet = new Wallet(reserved.mint, { unit: 'sat' })
+    const quote = await wallet.checkMeltQuoteBolt11(reserved.quoteId)
+    if (quote.state === 'PAID') {
+      const preimage = quote.payment_preimage ?? undefined
+      if (preimage && verifyPreimage(preimage, paymentHash)) {
+        tokenStore.dropReserved(paymentHash)
+        return { state: 'settled', preimage: preimage.toLowerCase() }
+      }
+      return { state: 'pending', reason: 'The mint reports the melt as paid but gave no preimage that matches the invoice.' }
+    }
+    if (quote.state === 'UNPAID') {
+      tokenStore.releaseReserved(paymentHash)
+      return { state: 'failed', reason: 'The mint reports the melt as unpaid; the reserved proofs are spendable again.' }
+    }
+    return { state: 'pending', reason: 'The mint still reports the melt as pending.' }
+  } catch {
+    return { state: 'pending', reason: 'The mint could not be reached. Try again later.' }
   }
 }
 

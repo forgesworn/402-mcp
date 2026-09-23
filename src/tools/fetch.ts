@@ -12,6 +12,7 @@ import type { X402Challenge } from '../x402/parse.js'
 import type { XCashuChallenge } from '../xcashu/parse.js'
 import type { LnurlcashChallenge } from '../xlnurlcash/parse.js'
 import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
+import type { PendingPayment } from '../store/pending-payments.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
 
@@ -63,7 +64,14 @@ export interface FetchDeps {
   parseIETFPayment: (header: string) => IETFPaymentChallenge | null
   /** Builds base64url credential for Authorization: Payment header. */
   buildIETFCredential: (challenge: IETFPaymentChallenge, preimage: string) => string
+  /** Ledger of unknown-outcome payments; any entry for a service pauses auto-pay to it. */
+  pendingPayments: {
+    add(entry: PendingPayment): void
+    unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
+  }
 }
+
+const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
 
 function parseBalance(value: string | null): number | null {
   if (value === null) return null
@@ -86,8 +94,8 @@ function paymentUnknown(result: PayOutcome, costSats: number | null, paymentHash
         paymentHash,
         method: result.method,
         message: result.outcome === 'unknown'
-          ? (result.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.')
-          : 'The wallet reported payment without a settlement preimage. Reconcile this invoice before retrying.',
+          ? (result.reason ?? `Payment may have executed. ${RECONCILE_HINT}`)
+          : `The wallet reported payment without a settlement preimage. ${RECONCILE_HINT}`,
       }, null, 2),
     }],
     isError: true as const,
@@ -122,6 +130,18 @@ export async function handleFetch(
   // The first URL in `urls` is also the primary URL for identity, origin, and payment.
   const primaryUrl = args.urls?.length ? args.urls[0] : args.url
   const origin = new URL(primaryUrl).origin
+  // Every origin this request may reach. A payment made here is recorded
+  // against all of them, and an unresolved one for any of them blocks auto-pay.
+  const candidateOrigins = [...new Set((args.urls?.length ? args.urls : [args.url]).map(u => new URL(u).origin))]
+  const recordUnknown = (entry: Omit<PendingPayment, 'origins' | 'pubkey' | 'createdAt'>) => {
+    deps.pendingPayments.add({
+      ...entry,
+      paymentHash: entry.paymentHash.toLowerCase(),
+      origins: candidateOrigins,
+      ...(args.pubkey ? { pubkey: args.pubkey } : {}),
+      createdAt: new Date().toISOString(),
+    })
+  }
   // When a pubkey is provided (from search results) use it as the credential key so
   // credentials are shared across all transport URLs for the same service.
   // For direct URL calls without a pubkey, fall back to origin-based keying.
@@ -185,6 +205,26 @@ export async function handleFetch(
             satsPaid: 0,
           }, null, 2),
         }],
+      }
+    }
+
+    // An earlier payment to this service may have gone through. Paying again
+    // before that is settled could buy the same thing twice.
+    if (args.autoPay) {
+      const unresolved = deps.pendingPayments.unresolvedFor(candidateOrigins, args.pubkey)
+      if (unresolved.length > 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 402,
+              paymentState: 'blocked',
+              unresolvedPayments: unresolved.map(p => p.paymentHash),
+              message: `Auto-pay to this service is paused: ${unresolved.length} earlier payment(s) to it have an unknown outcome. Call l402-reconcile with each paymentHash before paying again.`,
+            }, null, 2),
+          }],
+          isError: true as const,
+        }
       }
     }
 
@@ -346,15 +386,21 @@ export async function handleFetch(
               return paymentFailed(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
             }
             if (ietfPayResult.outcome === 'unknown' || !ietfPayResult.preimage) {
+              if (ietfChallenge.paymentHash) {
+                recordUnknown({ paymentHash: ietfChallenge.paymentHash, invoice: ietfChallenge.invoice, costSats: ietfChallenge.amountSats, protocol: 'ietf-payment', method: ietfPayResult.method })
+              }
               return paymentUnknown(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
             }
             if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
+              if (ietfChallenge.paymentHash) {
+                recordUnknown({ paymentHash: ietfChallenge.paymentHash, invoice: ietfChallenge.invoice, costSats: ietfChallenge.amountSats, protocol: 'ietf-payment', method: ietfPayResult.method })
+              }
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify({
                   error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
                   paymentState: 'unknown',
                   paymentHash: ietfChallenge.paymentHash,
-                  message: 'Reconcile the original invoice before retrying.',
+                  message: RECONCILE_HINT,
                 }) }],
                 isError: true as const,
               }
@@ -521,12 +567,18 @@ export async function handleFetch(
 
       // Unknown, or reported paid with no preimage: the money may have moved.
       if (payResult.outcome === 'unknown' || !payResult.preimage) {
+        if (decoded.paymentHash) {
+          recordUnknown({ paymentHash: decoded.paymentHash, invoice: challenge.invoice, costSats: decoded.costSats, protocol: 'l402', method: payResult.method, macaroon: challenge.macaroon })
+        }
         return paymentUnknown(payResult, decoded.costSats, decoded.paymentHash, 'l402')
       }
 
       // Validate preimage (hex) and macaroon (base64-safe) before storage
       // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
       if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
+        if (decoded.paymentHash) {
+          recordUnknown({ paymentHash: decoded.paymentHash, invoice: challenge.invoice, costSats: decoded.costSats, protocol: 'l402', method: payResult.method })
+        }
         return {
           content: [{
             type: 'text' as const,
@@ -534,7 +586,7 @@ export async function handleFetch(
               error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
               paymentState: 'unknown',
               paymentHash: decoded.paymentHash,
-              message: 'Reconcile the original invoice before retrying.',
+              message: RECONCILE_HINT,
             }),
           }],
           isError: true as const,

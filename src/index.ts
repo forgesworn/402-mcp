@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 
 import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { loadConfig } from './config.js'
 import { CredentialStore } from './store/credentials.js'
 import { CashuTokenStore } from './store/cashu-tokens.js'
 import { LnurlcashNoteStore } from './store/lnurlcash-notes.js'
+import { PendingPaymentStore, type PendingPayment } from './store/pending-payments.js'
 import { ChallengeCache } from './l402/challenge-cache.js'
 import { decodeBolt11 } from './l402/bolt11.js'
 import { parseL402Challenge } from './l402/parse.js'
@@ -15,7 +17,7 @@ import { createNwcWallet } from './wallet/nwc.js'
 import { createCashuWallet } from './wallet/cashu.js'
 import { createLnurlcashWallet } from './wallet/lnurlcash.js'
 import { createHumanWallet } from './wallet/human.js'
-import type { WalletMethod, WalletProvider } from './wallet/types.js'
+import type { WalletMethod, WalletProvider, PaymentLookup } from './wallet/types.js'
 import { registerConfigTool } from './tools/config.js'
 import { registerDiscoverTool } from './tools/discover.js'
 import { registerFetchTool } from './tools/fetch.js'
@@ -27,6 +29,8 @@ import { registerBuyCreditsTool } from './tools/buy-credits.js'
 import { registerRedeemCashuTool } from './tools/redeem-cashu.js'
 import { registerSearchTool } from './tools/search.js'
 import { registerFetchPreviewTool } from './tools/fetch-preview.js'
+import { registerReconcileTool } from './tools/reconcile.js'
+import { createElicitConfirm } from './tools/confirm.js'
 import { createNostrSubscriber } from './tools/nostr-subscribe.js'
 import { isX402Challenge, parseX402Challenge } from './x402/parse.js'
 import { formatX402PaymentRequest } from './x402/payment.js'
@@ -69,6 +73,8 @@ const cashuTokenStore = config.cashuTokensPath ? new CashuTokenStore(config.cash
 if (cashuTokenStore) await cashuTokenStore.init()
 const lnurlcashNoteStore = config.lnurlcashNotesPath ? new LnurlcashNoteStore(config.lnurlcashNotesPath) : undefined
 if (lnurlcashNoteStore) await lnurlcashNoteStore.init()
+const pendingPayments = new PendingPaymentStore(join(dirname(config.credentialStorePath), 'pending-payments.json'))
+await pendingPayments.init()
 const challengeCache = new ChallengeCache()
 const spendTracker = new SpendTracker()
 
@@ -145,6 +151,18 @@ async function payInvoice(
     ...(result.outcome ? { outcome: result.outcome } : {}),
     ...(result.reason ? { reason: result.reason } : {}),
   }
+}
+
+// Helper: ask the wallet that attempted a payment what became of it
+async function lookupPayment(entry: PendingPayment): Promise<PaymentLookup> {
+  const provider = walletProviders.find(p => p.method === entry.method && p.lookupPayment !== undefined)
+  if (!provider?.lookupPayment) {
+    return {
+      state: 'pending',
+      reason: `The ${entry.method} wallet cannot look payments up. Check the payment in your wallet, then call l402-reconcile with its preimage, or with abandon: true if it did not go out.`,
+    }
+  }
+  return provider.lookupPayment(entry.paymentHash)
 }
 
 // Helper: store credential — validates preimage and macaroon to prevent credential poisoning
@@ -242,6 +260,7 @@ registerFetchTool(server, {
   isIETFPayment: isIETFPaymentChallenge,
   parseIETFPayment: parseIETFPaymentChallenge,
   buildIETFCredential: buildIETFPaymentCredential,
+  pendingPayments,
 })
 
 registerPayTool(server, {
@@ -253,6 +272,7 @@ registerPayTool(server, {
   spendTracker,
   decodeBolt11,
   fetchFn: resilientFetch,
+  pendingPayments,
 })
 
 registerCredentialsTool(server, credentialStore)
@@ -272,6 +292,14 @@ registerBuyCreditsTool(server, {
   spendTracker,
   generateQr,
   walletMethod: () => getWallet()?.method,
+  pendingPayments,
+})
+
+registerReconcileTool(server, {
+  pendingPayments,
+  lookupPayment,
+  storeCredential,
+  confirmWithHuman: createElicitConfirm(server),
 })
 
 registerRedeemCashuTool(server, {

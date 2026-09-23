@@ -17,6 +17,7 @@ const baseDeps = {
   maxSpendPerMinuteSats: 10_000,
   spendTracker: new SpendTracker(),
   decodeBolt11: () => ({ costSats: 10, paymentHash: null, expiry: 3600 }),
+  pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([]) },
 }
 
 describe('handlePay', () => {
@@ -383,7 +384,7 @@ describe('handlePay', () => {
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', method: 'nwc' })
-    expect(parsed.reason).toContain('Reconcile')
+    expect(parsed.reason).toContain('l402-reconcile')
     expect(result.isError).toBe(true)
     expect(spendTracker.recentSpend()).toBe(50)
   })
@@ -418,7 +419,7 @@ describe('handlePay', () => {
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown' })
-    expect(parsed.reason).toContain('reconcile')
+    expect(parsed.reason).toContain('call l402-pay again')
     expect(result.isError).toBe(true)
     now.mockReturnValue(0)
     expect(spendTracker.recentSpend()).toBe(50)
@@ -448,5 +449,37 @@ describe('handlePay', () => {
     expect(parsed.paid).toBe(false)
     expect(parsed.reason).toContain('no encoded amount')
     expect(mockWallet.payInvoice).not.toHaveBeenCalled()
+  })
+
+  it('refuses to pay a service with an unresolved payment, and records a new unknown one', async () => {
+    const cache = new ChallengeCache()
+    cache.set({ invoice: 'lnbc...', macaroon: 'mac123', paymentHash: HASH_1, costSats: 10, expiresAt: Date.now() + 3600_000, url: 'https://api.example.com/x' })
+    const wallet = { method: 'nwc' as const, available: true, payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'nwc', outcome: 'unknown' }) }
+
+    const blocked = await handlePay({ paymentHash: HASH_1 }, {
+      ...baseDeps,
+      cache,
+      resolveWallet: () => wallet,
+      storeCredential: vi.fn(),
+      maxAutoPaySats: 1000,
+      spendTracker: new SpendTracker(),
+      pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([{ paymentHash: HASH_2 }]) },
+    })
+    expect(blocked.isError).toBe(true)
+    expect(JSON.parse(blocked.content[0].text).paymentState).toBe('blocked')
+    expect(wallet.payInvoice).not.toHaveBeenCalled()
+
+    const add = vi.fn()
+    await handlePay({ paymentHash: HASH_1 }, {
+      ...baseDeps,
+      cache,
+      resolveWallet: () => wallet,
+      storeCredential: vi.fn(),
+      maxAutoPaySats: 1000,
+      spendTracker: new SpendTracker(),
+      decodeBolt11: () => ({ costSats: 10, paymentHash: HASH_1, expiry: 3600 }),
+      pendingPayments: { add, unresolvedFor: vi.fn().mockReturnValue([]) },
+    })
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ paymentHash: HASH_1, origins: ['https://api.example.com'], macaroon: 'mac123' }))
   })
 })

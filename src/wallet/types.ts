@@ -19,8 +19,20 @@ export interface PaymentResult {
   verifyUrl?: string
 }
 
+/** What a wallet can say, after the fact, about a payment it attempted. */
+export type PaymentLookup =
+  | { state: 'settled'; preimage: string }
+  | { state: 'failed'; reason?: string }
+  | { state: 'pending'; reason?: string }
+
 export interface WalletProvider {
   method: WalletMethod
   available: boolean
   payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult>
+  /**
+   * Asks the wallet what became of an earlier payment. Only a preimage that
+   * hashes to `paymentHash` may be reported as settled, and only a wallet's
+   * definite answer as failed; anything else is pending.
+   */
+  lookupPayment?(paymentHash: string): Promise<PaymentLookup>
 }

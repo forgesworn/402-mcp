@@ -4,7 +4,7 @@ import {
   verifyLud21,
   fetchJson,
 } from 'farrier-kit'
-import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
 import type { LnurlcashNoteStore, StoredNote } from '../store/lnurlcash-notes.js'
 import {
   createNoteOps,
@@ -245,6 +245,20 @@ export function createLnurlcashWallet(
     },
     payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult> {
       return withLock(() => doPayInvoice(invoice, options))
+    },
+
+    lookupPayment(paymentHash: string): Promise<PaymentLookup> {
+      return withLock(async () => {
+        try { await ops.reconcile() } catch { /* the stored record below still counts */ }
+        const settled = store.settledMelts().find(m => m.paymentHashHex === paymentHash)
+        if (settled) return { state: 'settled', preimage: settled.preimage }
+        return {
+          state: 'pending',
+          reason: store.byState('melting').some(n => n.paymentHashHex === paymentHash)
+            ? 'The mint has not yet settled the melt for this payment.'
+            : 'No settlement has been recovered for this payment. Check with the mint, or supply the preimage.',
+        }
+      })
     },
   }
 }
