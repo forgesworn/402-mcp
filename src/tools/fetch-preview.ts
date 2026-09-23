@@ -89,6 +89,10 @@ export async function handleFetchPreview(
       if (deps.isIETFPayment(response.headers)) {
         const ietf = deps.parseIETFPayment(wwwAuth)
         if (ietf?.invoice && ietf.amountSats && ietf.paymentHash) {
+          // Preview what the invoice charges, not what the server says it does.
+          const invoice = deps.decodeBolt11(ietf.invoice)
+          const matches = invoice.costSats === ietf.amountSats
+            && invoice.paymentHash === ietf.paymentHash.toLowerCase()
           const expiresAt = ietf.expires
             ? new Date(ietf.expires).getTime()
             : Date.now() + 3600_000
@@ -97,14 +101,16 @@ export async function handleFetchPreview(
             status: 'preview' as const,
             endpoint: url,
             protocol: 'ietf-payment',
-            costSats: ietf.amountSats,
+            costSats: invoice.costSats,
             paymentMethod: deps.walletMethod() ?? 'none',
-            paymentHash: ietf.paymentHash,
+            paymentHash: invoice.paymentHash,
             expiresAt,
             realm: ietf.realm,
             intent: ietf.intent,
             widgetHint: 'payment-confirmation',
-            message: `Payment of ${ietf.amountSats} sats required to access ${new URL(url).hostname}. Confirm to proceed.`,
+            message: matches
+              ? `Payment of ${invoice.costSats} sats required to access ${new URL(url).hostname}. Confirm to proceed.`
+              : `The server states ${ietf.amountSats} sats but its invoice ${invoice.costSats === null ? 'has no readable amount' : `charges ${invoice.costSats} sats`}. l402-fetch will refuse to pay it.`,
           }
         }
       }

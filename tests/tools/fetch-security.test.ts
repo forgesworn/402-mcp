@@ -137,6 +137,38 @@ describe('handleFetch security', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  describe('IETF Payment challenge that disagrees with its invoice', () => {
+    const challenge = {
+      id: 'id1', realm: 'api.example.com', method: 'lightning', intent: 'charge',
+      request: 'request', invoice: 'lnbc50m1test', paymentHash: 'hash1', amountSats: 1,
+    }
+
+    it.each([
+      ['understates the amount', { ...challenge }, { costSats: 5_000_000, paymentHash: 'hash1' }],
+      ['names another payment hash', { ...challenge, amountSats: 50 }, { costSats: 50, paymentHash: 'hash2' }],
+      ['has an amountless invoice', { ...challenge }, { costSats: null, paymentHash: 'hash1' }],
+    ])('refuses to pay when the challenge %s', async (_label, parsedChallenge, invoice) => {
+      const tracker = new SpendTracker()
+      const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(402, { 'www-authenticate': 'Payment id="id1"' }, '{}'))
+      const deps = makeDeps({
+        fetchFn: fetchMock as unknown as typeof fetch,
+        isIETFPayment: vi.fn().mockReturnValue(true),
+        parseIETFPayment: vi.fn().mockReturnValue(parsedChallenge),
+        decodeBolt11: vi.fn().mockReturnValue({ ...invoice, expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }),
+        maxAutoPaySats: 1000,
+        spendTracker: tracker,
+      })
+
+      const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+      expect(result.isError).toBe(true)
+      expect(JSON.parse(result.content[0].text).error).toMatch(/does not match its invoice/)
+      expect(deps.payInvoice).not.toHaveBeenCalled()
+      expect(tracker.recentSpend()).toBe(0)
+      expect(deps.parseL402).not.toHaveBeenCalled()
+    })
+  })
+
   it('does not fall through to a second rail when an IETF payment outcome is unknown', async () => {
     const tracker = new SpendTracker()
     const fetchMock = vi.fn().mockResolvedValueOnce(mockResponse(402, {
@@ -155,6 +187,7 @@ describe('handleFetch security', () => {
         paymentHash: 'hash1',
         amountSats: 50,
       }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
       payInvoice: vi.fn().mockResolvedValue({
         paid: false,
         method: 'nwc',

@@ -18,13 +18,13 @@ describe('decodeBolt11', () => {
     })
   })
 
-  it('preserves amountless invoice and explicit sat-floor behaviour', () => {
+  it('keeps amountless invoices null and rounds sub-sat amounts up', () => {
     expect(decodeBolt11(AMOUNTLESS_INVOICE)).toEqual({
       costSats: null,
       paymentHash: '0001020304050607080900010203040506070809000102030405060708090102',
       expiry: 3600,
     })
-    expect(decodeBolt11(SUB_SAT_INVOICE).costSats).toBe(0)
+    expect(decodeBolt11(SUB_SAT_INVOICE).costSats).toBe(1)
   })
 
   it('keeps invalid invoices non-throwing', () => {
