@@ -684,9 +684,13 @@ export async function handleFetch(
     }
     const message = creditsExhausted
       ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402-buy-credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
+      : decoded.costSats === null
+        ? challenge
+          ? 'Payment required, but the invoice states no amount, so it cannot be checked against the spending limits and will not be paid automatically.'
+          : 'Payment required, but the response carries no payment challenge this client can read.'
       : !autoPay
         ? `Payment of ${decoded.costSats} sats required. autoPay disabled.`
-        : decoded.costSats !== null && decoded.costSats > autoPayCap
+        : decoded.costSats > autoPayCap
           ? `Payment of ${decoded.costSats} sats required. Exceeds ${capLabel}.`
           : !withinSpendLimit
             ? (deps.spendTracker.refusal(decoded.costSats ?? 0, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.')

@@ -842,4 +842,20 @@ describe('handleFetch lnurlcash rail', () => {
     expect(parsed.status).toBe(402)
     expect(parsed.message).toContain('maxCostSats (40)')
   })
+
+  it.each([
+    ['no readable challenge', null, /no payment challenge this client can read/],
+    ['an amountless invoice', { macaroon: 'mac1', invoice: 'lnbc1test' }, /states no amount/],
+  ])('never says "null sats" for a 402 with %s', async (_label, challenge, message) => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {}, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue(challenge),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
+    })
+    for (const autoPay of [false, true]) {
+      const parsed = JSON.parse((await handleFetch({ url: 'https://api.example.com/data', autoPay }, deps)).content[0].text)
+      expect(parsed.message).not.toContain('null')
+      expect(parsed.message).toMatch(message)
+    }
+  })
 })
