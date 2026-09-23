@@ -2,6 +2,7 @@ import { resolve } from 'node:path'
 import { homedir } from 'node:os'
 import { closeSync, fstatSync, openSync, readSync } from 'node:fs'
 import { inspectNwcConnection } from '@forgesworn/nwc-kit'
+import { parseSocksProxyUrl, type ProxyScope } from './fetch/socks-proxy.js'
 
 export interface L402Config {
   nwcUri: string | undefined
@@ -21,7 +22,8 @@ export interface L402Config {
   corsOrigin: string | false
   bindAddress: string
   transportPreference: string[]
-  torProxy: string | undefined
+  /** SOCKS5 proxy: `onion` scope from TOR_PROXY, `all` scope from SOCKS_PROXY */
+  proxy: { url: string; scope: ProxyScope } | undefined
   hnsGatewayUrl: string
 }
 
@@ -101,7 +103,16 @@ export function loadConfig(): L402Config {
   const transportPreference = transportPref
     ? transportPref.split(',').map(s => s.trim()).filter(Boolean)
     : ['onion', 'hns', 'https', 'http']
-  const torProxy = process.env.TOR_PROXY || process.env.SOCKS_PROXY || undefined
+  const torProxy = process.env.TOR_PROXY || undefined
+  const socksProxy = process.env.SOCKS_PROXY || undefined
+  if (torProxy && socksProxy) {
+    throw new Error('Set TOR_PROXY (only .onion through the proxy) or SOCKS_PROXY (everything through the proxy), not both')
+  }
+  const proxy: L402Config['proxy'] = socksProxy
+    ? { url: parseSocksProxyUrl('SOCKS_PROXY', socksProxy), scope: 'all' }
+    : torProxy
+      ? { url: parseSocksProxyUrl('TOR_PROXY', torProxy), scope: 'onion' }
+      : undefined
   const hnsGatewayUrl = process.env.HNS_GATEWAY_URL || 'https://query.hdns.io/'
 
   const config: L402Config = {
@@ -122,7 +133,7 @@ export function loadConfig(): L402Config {
     corsOrigin: process.env.CORS_ORIGIN || false,
     bindAddress: process.env.BIND_ADDRESS ?? '127.0.0.1',
     transportPreference,
-    torProxy,
+    proxy,
     hnsGatewayUrl,
   }
 

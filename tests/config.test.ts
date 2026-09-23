@@ -240,29 +240,35 @@ describe('config validation', () => {
     expect(loadConfig().transportPreference).toEqual(['https', 'http'])
   })
 
-  // Tor proxy
-  it('defaults torProxy to undefined when neither TOR_PROXY nor SOCKS_PROXY is set', async () => {
+  // SOCKS proxy
+  it('has no proxy when neither TOR_PROXY nor SOCKS_PROXY is set', async () => {
     const { loadConfig } = await import('../src/config.js')
-    expect(loadConfig().torProxy).toBeUndefined()
+    expect(loadConfig().proxy).toBeUndefined()
   })
 
-  it('reads torProxy from TOR_PROXY env var', async () => {
-    vi.stubEnv('TOR_PROXY', 'socks5://127.0.0.1:9050')
+  it('routes only .onion through TOR_PROXY', async () => {
+    vi.stubEnv('TOR_PROXY', 'socks5h://127.0.0.1:9050')
     const { loadConfig } = await import('../src/config.js')
-    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9050')
+    expect(loadConfig().proxy).toEqual({ url: 'socks5://127.0.0.1:9050', scope: 'onion' })
   })
 
-  it('falls back to SOCKS_PROXY when TOR_PROXY is not set', async () => {
+  it('routes everything through SOCKS_PROXY', async () => {
     vi.stubEnv('SOCKS_PROXY', 'socks5://127.0.0.1:9150')
     const { loadConfig } = await import('../src/config.js')
-    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9150')
+    expect(loadConfig().proxy).toEqual({ url: 'socks5://127.0.0.1:9150', scope: 'all' })
   })
 
-  it('prefers TOR_PROXY over SOCKS_PROXY when both are set', async () => {
+  it('refuses TOR_PROXY and SOCKS_PROXY together', async () => {
     vi.stubEnv('TOR_PROXY', 'socks5://127.0.0.1:9050')
     vi.stubEnv('SOCKS_PROXY', 'socks5://127.0.0.1:9150')
     const { loadConfig } = await import('../src/config.js')
-    expect(loadConfig().torProxy).toBe('socks5://127.0.0.1:9050')
+    expect(() => loadConfig()).toThrow(/not both/)
+  })
+
+  it('refuses a proxy URL that is not SOCKS5', async () => {
+    vi.stubEnv('SOCKS_PROXY', 'http://127.0.0.1:8080')
+    const { loadConfig } = await import('../src/config.js')
+    expect(() => loadConfig()).toThrow(/socks5/)
   })
 
   // HNS gateway URL

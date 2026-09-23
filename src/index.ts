@@ -37,6 +37,7 @@ import { attemptLnurlcashPayment } from './xlnurlcash/payment.js'
 import { isIETFPaymentChallenge, parseIETFPaymentChallenge } from './ietf-payment/parse.js'
 import { buildIETFPaymentCredential } from './ietf-payment/credential.js'
 import { createResilientFetch, withTransportFallback } from './fetch/resilient-fetch.js'
+import { createSocksFetch } from './fetch/socks-proxy.js'
 import { selectTransports } from './fetch/transport.js'
 import { resolveHns as resolveHnsBase } from './fetch/hns-resolve.js'
 import { SpendTracker } from './spend-tracker.js'
@@ -55,7 +56,7 @@ const resilientFetch = createResilientFetch(fetch, {
   maxResponseBytes: config.fetchMaxResponseBytes,
   ssrfAllowPrivate: config.ssrfAllowPrivate,
   resolveHns,
-  hasTorProxy: !!config.torProxy,
+  proxy: config.proxy && { scope: config.proxy.scope, fetchFn: createSocksFetch(config.proxy.url) },
 })
 
 // Shared state
@@ -211,7 +212,7 @@ registerFetchTool(server, {
   fetchFn: resilientFetch,
   transportFetch: (urls, init) =>
     withTransportFallback(
-      selectTransports(urls, config.transportPreference, { hasTorProxy: !!config.torProxy }),
+      selectTransports(urls, config.transportPreference, { hasTorProxy: config.proxy !== undefined }),
       init,
       resilientFetch,
     ),

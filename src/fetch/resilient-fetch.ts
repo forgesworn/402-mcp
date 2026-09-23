@@ -1,4 +1,5 @@
 import { validateUrl, type ResolvedAddress, type ValidateUrlOptions } from './ssrf-guard.js'
+import { usesProxy, type ProxyRoute } from './socks-proxy.js'
 import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError, TransportUnavailableError } from './errors.js'
 
 export interface ResilientFetchOptions {
@@ -17,8 +18,12 @@ export interface ResilientFetchConfig {
   ssrfAllowPrivate?: boolean
   /** HNS (Handshake) resolver — called on NXDOMAIN to resolve alternative TLDs */
   resolveHns?: ValidateUrlOptions['resolveHns']
-  /** Whether a Tor SOCKS proxy is configured — enables .onion URL routing */
-  hasTorProxy?: boolean
+  /**
+   * SOCKS5 route. `.onion` hosts (and, with scope `all`, every host) are
+   * fetched through `proxy.fetchFn`; the rest use `fetchFn`. Without a
+   * route, `.onion` URLs are refused rather than leaked to the local resolver.
+   */
+  proxy?: ProxyRoute
 }
 
 const MAX_REDIRECTS = 5
@@ -91,9 +96,12 @@ export function createResilientFetch(
   const globalBackoff = config.backoffMs ?? DEFAULT_BACKOFF_MS
   const globalMaxResponseBytes = config.maxResponseBytes ?? 0
   const allowPrivate = config.ssrfAllowPrivate ?? false
+  const proxy = config.proxy
   const ssrfOptions: ValidateUrlOptions = {
-    resolveHns: config.resolveHns,
-    hasTorProxy: config.hasTorProxy ?? false,
+    // Resolving an HNS name would go around a proxy that carries everything.
+    resolveHns: proxy?.scope === 'all' ? undefined : config.resolveHns,
+    hasTorProxy: proxy !== undefined,
+    remoteDns: proxy?.scope === 'all',
   }
 
   return async function resilientFetch(
@@ -123,7 +131,7 @@ export function createResilientFetch(
 
       try {
         let response = await fetchWithTimeoutAndRedirects(
-          fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr, resolved, ssrfOptions,
+          fetchFn, urlStr, init, timeoutMs, allowPrivate, urlStr, resolved, ssrfOptions, proxy,
         )
 
         // If retryable status and we have retries left, drain body and continue
@@ -195,6 +203,7 @@ async function fetchWithTimeoutAndRedirects(
   originalUrl: string,
   resolved?: ResolvedAddress,
   ssrfOptions: ValidateUrlOptions = {},
+  proxy?: ProxyRoute,
 ): Promise<Response> {
   let currentUrl = url
   let currentInit = init ? { ...init } : {}
@@ -205,8 +214,16 @@ async function fetchWithTimeoutAndRedirects(
   const chainStart = Date.now()
 
   while (true) {
+    // Choose per hop: a redirect can move between clearnet and .onion.
+    // A proxied hop is never pinned: the proxy resolves the name, and
+    // rewriting it to a local lookup's IP would defeat the point.
+    const proxied = usesProxy(proxy, new URL(currentUrl).hostname)
+    const hopFetch = proxied ? proxy!.fetchFn : fetchFn
+
     // Pin HTTP URLs to the validated IP to prevent DNS rebinding
-    const { pinnedUrl, hostHeader } = pinUrlToResolvedIp(currentUrl, currentResolved)
+    const { pinnedUrl, hostHeader } = proxied
+      ? { pinnedUrl: currentUrl, hostHeader: undefined }
+      : pinUrlToResolvedIp(currentUrl, currentResolved)
 
     const elapsed = Date.now() - chainStart
     const remainingMs = Math.max(0, timeoutMs - elapsed)
@@ -233,7 +250,7 @@ async function fetchWithTimeoutAndRedirects(
 
     let response: Response
     try {
-      response = await fetchFn(pinnedUrl, fetchInit)
+      response = await hopFetch(pinnedUrl, fetchInit)
     } catch (err) {
       clearTimeout(timeoutId)
       if (controller.signal.aborted) {

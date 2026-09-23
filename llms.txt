@@ -4,7 +4,7 @@
 
 402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payer methods are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
 
-Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — enabling censorship-resistant API access without any client-side configuration.
+Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — .onion endpoints need `TOR_PROXY` or `SOCKS_PROXY`; clearnet and HNS need no configuration.
 
 ## Getting Started
 
@@ -51,7 +51,8 @@ Add to your MCP configuration:
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services |
-| `TOR_PROXY` | — | SOCKS5 proxy for .onion routing (e.g. `socks5://127.0.0.1:9050`) |
+| `TOR_PROXY` | — | SOCKS5 proxy for .onion requests only (e.g. `socks5h://127.0.0.1:9050`) |
+| `SOCKS_PROXY` | — | SOCKS5 proxy for every paid-API request, names resolved by the proxy. Set this or `TOR_PROXY`, not both |
 | `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake name resolution |
 
 ## Key Concepts
@@ -139,7 +140,7 @@ The human stays in control of three things: the safety caps, which payment metho
 
 ## Security
 
-- **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Handshake names are resolved via DNS-over-HTTPS with the resolved IP validated against blocked ranges. .onion addresses bypass DNS and route through the configured SOCKS proxy. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
+- **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Handshake names are resolved via DNS-over-HTTPS with the resolved IP validated against blocked ranges. .onion addresses bypass DNS and route through the configured SOCKS proxy. With `SOCKS_PROXY`, no host name is resolved locally; IP literals and local names are still refused. Wallet and relay traffic is not proxied. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
 - **Credential encryption** — stored credentials are encrypted with AES-256-GCM. The encryption key is stored in the OS keychain when available, falling back to a file-based key with a warning.
 - **Settlement proof** — NWC responses are authenticated with NIP-44 v2 and signed events, then the returned preimage is verified against the challenged BOLT-11 payment hash before storage.
 - **Spend tracking** — atomic `tryRecord()` prevents TOCTOU race conditions in concurrent spend checks.
