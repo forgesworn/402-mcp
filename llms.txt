@@ -181,7 +181,7 @@ https://github.com/forgesworn/toll-booth
 
 **satgate** demonstrates the AI inference use case: a proxy that gates access to AI model endpoints (Ollama, vLLM, llama.cpp) behind L402 payments. Agents use 402-mcp to discover pricing, pay per-request or buy credit tiers, and consume inference capacity without pre-provisioned API keys.
 
-https://github.com/forgesworn/satgate
+https://github.com/TheCryptoDonkey/satgate
 
 **402-announce** publishes HTTP 402 services on Nostr as kind 31402 events, making them discoverable by `l402-search`. Operators run it alongside their L402 server to announce capabilities, pricing, and payment methods to the decentralised network.
 

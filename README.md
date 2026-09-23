@@ -200,7 +200,7 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 | Project | Role |
 |---------|------|
 | [toll-booth](https://github.com/forgesworn/toll-booth) | Payment-backend agnostic HTTP 402 middleware |
-| [satgate](https://github.com/forgesworn/satgate) | Pay-per-token AI inference proxy (built on toll-booth) |
+| [satgate](https://github.com/TheCryptoDonkey/satgate) | Pay-per-token AI inference proxy (built on toll-booth) |
 | **[402-mcp](https://github.com/forgesworn/402-mcp)** | **MCP client: AI agents discover, pay for and consume L402 APIs** |
 | [402-announce](https://github.com/forgesworn/402-announce) | Publish L402 services on Nostr for decentralised discovery |
 

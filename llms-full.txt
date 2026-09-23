@@ -459,7 +459,7 @@ Credentials are keyed by service **pubkey** (from the kind 31402 event) and boun
 |---------|------|-----|
 | **402-mcp** | MCP client — AI agents discover, pay, and consume L402 APIs | https://github.com/forgesworn/402-mcp |
 | **toll-booth** | L402 payment middleware for any Node.js server | https://github.com/forgesworn/toll-booth |
-| **satgate** | Pay-per-token AI inference proxy (built on toll-booth) | https://github.com/forgesworn/satgate |
+| **satgate** | Pay-per-token AI inference proxy (built on toll-booth) | https://github.com/TheCryptoDonkey/satgate |
 | **402-announce** | Publish L402 services on Nostr for decentralised discovery | https://github.com/forgesworn/402-announce |
 
 ## Integration Patterns

@@ -6,7 +6,7 @@ Today, when an AI agent needs data from a paid API, a human has to sign up, gene
 
 402-mcp changes that. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits. The agent discovers a service, reads the price, pays the invoice, and gets the data — all inside a single tool call.
 
-402-mcp is the client side of a machine-to-machine commerce stack. On the server side, [toll-booth](https://github.com/forgesworn/toll-booth) makes any API payable, and [satgate](https://github.com/forgesworn/satgate) monetises AI inference specifically. Together they enable a world where agents pay for the services they need, operators earn from the services they provide, and no one needs permission from a platform in between.
+402-mcp is the client side of a machine-to-machine commerce stack. On the server side, [toll-booth](https://github.com/forgesworn/toll-booth) makes any API payable, and [satgate](https://github.com/TheCryptoDonkey/satgate) monetises AI inference specifically. Together they enable a world where agents pay for the services they need, operators earn from the services they provide, and no one needs permission from a platform in between.
 
 We believe:
 
