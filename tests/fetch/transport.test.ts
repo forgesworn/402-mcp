@@ -77,10 +77,16 @@ describe('selectTransports', () => {
       expect(result[0]).toBe('http://example.hns')
     })
 
-    it('classifies .bit domain as hns', () => {
-      const urls = ['http://example.bit', 'https://example.com']
+    it.each(['pub', 'fyi', 'bit'])('ranks an unfamiliar .%s TLD after https rather than as HNS', (tld) => {
+      const urls = [`https://example.${tld}`, 'https://example.com']
       const result = selectTransports(urls, DEFAULT_PREFERENCE, { hasTorProxy: false })
-      expect(result[0]).toBe('http://example.bit')
+      expect(result).toEqual(['https://example.com', `https://example.${tld}`])
+    })
+
+    it('still ranks an unfamiliar TLD ahead of plain http', () => {
+      const urls = ['http://example.com', 'https://example.pub']
+      const result = selectTransports(urls, DEFAULT_PREFERENCE, { hasTorProxy: false })
+      expect(result).toEqual(['https://example.pub', 'http://example.com'])
     })
 
     it('does not classify standard TLDs (com, org, net, io) as hns', () => {

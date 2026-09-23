@@ -97,7 +97,7 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 
 When a kind 31402 event advertises multiple URLs (one per transport), 402-mcp selects the best one based on your configuration:
 
-1. **Preference first**: URLs are tried in `TRANSPORT_PREFERENCE` order, `onion,hns,https,http` by default. Use `onion`, `hns`, `https` and `http` as the values.
+1. **Preference first**: URLs are tried in `TRANSPORT_PREFERENCE` order, `onion,hns,https,http` by default. Use `onion`, `hns`, `https` and `http` as the values. A URL counts as `hns` when its TLD is `.hns`. One whose TLD is merely unfamiliar (`.pub`, `.fyi`) is more likely an ICANN name, so it is tried just after `https`.
 2. **Capability filter**: `.onion` URLs are skipped unless `TOR_PROXY` or `SOCKS_PROXY` is set, so without a proxy the default order starts at HNS and clearnet.
 3. **Availability fallback**: if a transport is unreachable (connection refused, timeout), the next URL is tried.
 
