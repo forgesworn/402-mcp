@@ -15,6 +15,7 @@ import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
 import type { PendingPayment } from '../store/pending-payments.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
+import { untrusted } from './untrusted.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 const MACAROON_RE = /^[A-Za-z0-9+/_\-=]+$/
@@ -234,7 +235,7 @@ export async function handleFetch(
           text: JSON.stringify({
             status: response.status,
             headers: filterResponseHeaders(response.headers),
-            body,
+            body: untrusted(body, origin),
             creditsRemaining: balance,
             satsPaid: 0,
           }, null, 2),
@@ -301,7 +302,7 @@ export async function handleFetch(
                   text: JSON.stringify({
                     status: retryResponse.status,
                     headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
+                    body: untrusted(retryBody, origin),
                     creditsRemaining: retryBalance,
                     satsPaid: lnurlcashResult.amountSats,
                     paymentMethod: 'lnurlcash',
@@ -345,7 +346,7 @@ export async function handleFetch(
                   text: JSON.stringify({
                     status: retryResponse.status,
                     headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
+                    body: untrusted(retryBody, origin),
                     creditsRemaining: retryBalance,
                     satsPaid: xcashuResult.amountSats,
                     paymentMethod: 'xcashu',
@@ -456,7 +457,7 @@ export async function handleFetch(
                 text: JSON.stringify({
                   status: retryResponse.status,
                   headers: filterResponseHeaders(retryResponse.headers),
-                  body: retryBody,
+                  body: untrusted(retryBody, origin),
                   satsPaid: ietfChallenge.amountSats,
                   paymentMethod: 'ietf-payment',
                 }, null, 2),
@@ -661,7 +662,7 @@ export async function handleFetch(
           text: JSON.stringify({
             status: retryResponse.status,
             headers: filterResponseHeaders(retryResponse.headers),
-            body: retryBody,
+            body: untrusted(retryBody, origin),
             creditsRemaining: retryBalance,
             satsPaid: decoded.costSats,
           }, null, 2),
@@ -669,7 +670,18 @@ export async function handleFetch(
       }
     }
 
-    // Step 5: Return 402 challenge for agent decision
+    // Step 5: Return 402 challenge for agent decision. Cache it, so that
+    // l402-pay can pay exactly this invoice by its paymentHash.
+    if (challenge && decoded.paymentHash) {
+      deps.challengeCache.set({
+        invoice: challenge.invoice,
+        macaroon: challenge.macaroon,
+        paymentHash: decoded.paymentHash,
+        costSats: decoded.costSats,
+        expiresAt: Date.now() + decoded.expiry * 1000,
+        url: primaryUrl,
+      })
+    }
     const message = creditsExhausted
       ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402-buy-credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
       : !autoPay
@@ -709,7 +721,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402-fetch',
     {
-      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain + ecash and LUD-25 bearer notes). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier. For widget hosts, call l402-fetch-preview first to show a payment confirmation dialog before spending.',
+      description: 'Fetch a URL, paying its HTTP 402 challenge (L402, IETF Payment, Cashu or LNURLcash) when autoPay is true and the price is within MAX_AUTO_PAY_SATS, maxCostSats and the spend limits. Reuses stored credentials. Without autoPay, a 402 comes back with its price and paymentHash so the user can decide; l402-pay can then pay it. For x402 services, which this server supports only in an experimental custom format, returns the payment details for the user to pay in their own wallet. Response bodies are marked as untrusted content. With widget hosts, call l402-fetch-preview first to show the price.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),

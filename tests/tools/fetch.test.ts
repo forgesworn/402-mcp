@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleFetch, type FetchDeps } from '../../src/tools/fetch.js'
+import { unwrapUntrusted } from '../../src/tools/untrusted.js'
 import { SpendTracker } from '../../src/spend-tracker.js'
 import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
@@ -56,7 +57,7 @@ describe('handleFetch', () => {
     const parsed = JSON.parse(result.content[0].text)
 
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('hello world')
+    expect(unwrapUntrusted(parsed.body)).toBe('hello world')
     expect(parsed.satsPaid).toBe(0)
   })
 
@@ -113,7 +114,7 @@ describe('handleFetch', () => {
     const parsed = JSON.parse(result.content[0].text)
 
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('paid content')
+    expect(unwrapUntrusted(parsed.body)).toBe('paid content')
     expect(parsed.satsPaid).toBe(50)
     expect(parsed.creditsRemaining).toBe(950)
     expect(deps.credentialStore.set).toHaveBeenCalledWith('https://api.example.com', expect.objectContaining({
@@ -507,7 +508,7 @@ describe('handleFetch', () => {
 
       const parsed = JSON.parse(result.content[0].text)
       expect(parsed.status).toBe(200)
-      expect(parsed.body).toBe('from transport')
+      expect(unwrapUntrusted(parsed.body)).toBe('from transport')
     })
 
     it('uses fetchFn (not transportFetch) when only a single URL is provided', async () => {
@@ -660,7 +661,7 @@ describe('handleFetch', () => {
 
       const parsed = JSON.parse(result.content[0].text)
       expect(parsed.status).toBe(200)
-      expect(parsed.body).toBe('access granted')
+      expect(unwrapUntrusted(parsed.body)).toBe('access granted')
     })
 
     it('does not set X-Payment header when txHash is absent', async () => {
@@ -705,7 +706,7 @@ describe('handleFetch lnurlcash rail', () => {
     expect(fetchMock.mock.calls[1][1].headers['X-LNURLcash']).toBe(NOTE)
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('the goods')
+    expect(unwrapUntrusted(parsed.body)).toBe('the goods')
     expect(parsed.satsPaid).toBe(5)
     expect(parsed.paymentMethod).toBe('lnurlcash')
   })

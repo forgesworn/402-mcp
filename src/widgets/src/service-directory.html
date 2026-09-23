@@ -84,6 +84,15 @@ function el(tag, attrs, ...children) {
     root.replaceChildren(el("div", { className: "status-text" }, text));
   }
 
+  // l402-search delimits announcement text as untrusted for the agent. The
+  // card shows the text itself; it is rendered as text, never as markup.
+  function plain(value) {
+    const m = typeof value === "string"
+      ? /^\[UNTRUSTED CONTENT from [^\]\n]*\]\n([\s\S]*)\n\[END UNTRUSTED CONTENT\]$/.exec(value)
+      : null;
+    return m ? m[1] : value;
+  }
+
   function renderServices(services, query) {
     const searchInput = el("input", {
       className: "search-box",
@@ -128,8 +137,8 @@ function el(tag, attrs, ...children) {
           });
         },
       },
-        el("div", { className: "service-name" }, svc.name || "Unnamed Service"),
-        svc.about ? el("div", { className: "service-desc" }, svc.about) : null,
+        el("div", { className: "service-name" }, plain(svc.name) || "Unnamed Service"),
+        svc.about ? el("div", { className: "service-desc" }, plain(svc.about)) : null,
         chips,
       );
       list.appendChild(card);

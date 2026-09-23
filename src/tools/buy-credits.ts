@@ -5,6 +5,7 @@ import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { SpendTracker } from '../spend-tracker.js'
 import type { PendingPayment } from '../store/pending-payments.js'
+import type { ChallengeCache } from '../l402/challenge-cache.js'
 import { safeErrorMessage } from './safe-error.js'
 
 const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
@@ -30,6 +31,8 @@ export interface BuyCreditsDeps {
     add(entry: PendingPayment): void
     unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
   }
+  /** Where an unpaid invoice is kept so l402-pay can settle it by paymentHash. */
+  challengeCache?: ChallengeCache
 }
 
 /** Purchases a volume discount credit tier from a toll-booth server. */
@@ -234,6 +237,16 @@ export async function handleBuyCredits(
 
     // Human wallet timed out — return QR so user can pay manually
     if (payResult.method === 'human') {
+      if (decoded.paymentHash) {
+        deps.challengeCache?.set({
+          invoice,
+          macaroon,
+          paymentHash: decoded.paymentHash,
+          costSats: decoded.costSats,
+          expiresAt: Date.now() + decoded.expiry * 1000,
+          url: args.url,
+        })
+      }
       let qrText: string | undefined
       let qrPngBase64: string | undefined
       try {
