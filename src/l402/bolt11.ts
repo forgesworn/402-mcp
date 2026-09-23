@@ -1,4 +1,4 @@
-import { msatsToSatsFloor, tryDecodeBolt11 } from 'farrier-kit/bolt11'
+import { tryDecodeBolt11 } from 'farrier-kit/bolt11'
 
 export interface DecodedInvoice {
   costSats: number | null
@@ -14,7 +14,8 @@ export function decodeBolt11(invoice: string): DecodedInvoice {
   }
 
   return {
-    costSats: decoded.amountMsats === null ? null : msatsToSatsFloor(decoded.amountMsats),
+    // Rounded up: a spending cap must never see less than the invoice charges.
+    costSats: decoded.amountMsats === null ? null : Number((decoded.amountMsats + 999n) / 1000n),
     paymentHash: decoded.paymentHashHex,
     expiry: decoded.expirySeconds,
   }

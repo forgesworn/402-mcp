@@ -386,7 +386,8 @@ HTTP transport includes:
 | `SSRF_ALLOW_PRIVATE` | false | Allow requests to private IP ranges. Local development only. |
 | `NODE_TLS_REJECT_UNAUTHORIZED` | — | Warning emitted if set to "0" (disables TLS validation). |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services. |
-| `TOR_PROXY` | — | SOCKS5 proxy for .onion routing (e.g. `socks5://127.0.0.1:9050`). Falls back to `SOCKS_PROXY`. |
+| `TOR_PROXY` | — | SOCKS5 proxy for .onion requests only (e.g. `socks5h://127.0.0.1:9050`). |
+| `SOCKS_PROXY` | — | SOCKS5 proxy for every paid-API request, names resolved by the proxy. Set this or `TOR_PROXY`, not both. Wallet and relay traffic is not proxied. |
 | `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake (HNS) name resolution. |
 
 ## Multi-Transport Endpoints

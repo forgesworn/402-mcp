@@ -52,12 +52,12 @@ graph LR
 **Example session:**
 
 ```
-Agent: "I need routing data from routing.trotters.cc"
+Agent: "I need routing data from routing.example.com"
 
 1. l402-config()
    -> nwcConfigured: true, maxAutoPaySats: 1000
 
-2. l402-discover("https://routing.trotters.cc/api/route")
+2. l402-discover("https://routing.example.com/api/route")
    -> 10 sats/request, toll-booth detected, tiers available
 
 3. Agent reasons: "I need ~20 requests. The 500-sat tier
@@ -66,7 +66,7 @@ Agent: "I need routing data from routing.trotters.cc"
 4. l402-buy-credits(url, amountSats=500)
    -> Paid 500 sats, received 555 credits
 
-5. l402-fetch("https://routing.trotters.cc/api/route?from=...&to=...")
+5. l402-fetch("https://routing.example.com/api/route?from=...&to=...")
    -> 200 OK, route data, 545 credits remaining
 ```
 
@@ -84,19 +84,28 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services (comma-separated) |
-| `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses (e.g. `socks5h://127.0.0.1:9050`) |
-| `SOCKS_PROXY` | - | Generic SOCKS5 proxy for all requests when set |
+| `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses only (e.g. `socks5h://127.0.0.1:9050`) |
+| `SOCKS_PROXY` | - | SOCKS5 proxy for every paid-API request (e.g. Tor at `socks5h://127.0.0.1:9050`). Set this or `TOR_PROXY`, not both |
 | `HNS_GATEWAY_URL` | - | HTTP gateway for Handshake (`.hns`) domains (e.g. `https://hns.to`) |
 
 ### Transport selection and fallback
 
 When a kind 31402 event advertises multiple URLs (one per transport), 402-mcp selects the best one based on your configuration:
 
-1. **Preference first** — if `TRANSPORT_PREFERENCE=tor` and a `.onion` URL is available, it is tried first.
-2. **Availability fallback** — if the preferred transport is unreachable (proxy not configured, timeout), the client falls back to the next URL in the list.
-3. **Clearnet default** — if no preference is set, clearnet URLs are tried before `.onion` or HNS entries.
+1. **Preference first**: URLs are tried in `TRANSPORT_PREFERENCE` order, `onion,hns,https,http` by default. Use `onion`, `hns`, `https` and `http` as the values.
+2. **Capability filter**: `.onion` URLs are skipped unless `TOR_PROXY` or `SOCKS_PROXY` is set, so without a proxy the default order starts at HNS and clearnet.
+3. **Availability fallback**: if a transport is unreachable (connection refused, timeout), the next URL is tried.
 
 Services can announce multiple endpoints for the **same service** (same pricing, same macaroon key) on different transports. This is purely for censorship resistance; you do not need to re-authenticate when switching transports. To reach Tor or HNS endpoints you must configure the corresponding proxy/gateway env vars above.
+
+### Tor and SOCKS5
+
+- **`TOR_PROXY`** sends `.onion` requests through the proxy. Everything else connects directly.
+- **`SOCKS_PROXY`** sends every request to a paid API through the proxy, including redirects. Host names are resolved by the proxy, never by this machine, so a Tor proxy hides both your IP and the names you look up. The SSRF guard still refuses private IP literals and local names such as `localhost`; it cannot see what a name resolves to on the far side, which Tor exits refuse for private ranges anyway.
+
+Neither setting covers wallet or discovery traffic: NWC relays, Cashu and LNURLcash mints, and the Nostr relays `l402-search` queries still connect directly. Handshake lookups are switched off under `SOCKS_PROXY`, because the DNS-over-HTTPS query would go around the proxy.
+
+SOCKS5 support comes from undici's `Socks5ProxyAgent`, which Node marks experimental; expect one `ExperimentalWarning` on stderr when a proxy is configured.
 
 ## Tools
 

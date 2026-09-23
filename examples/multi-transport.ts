@@ -12,6 +12,7 @@ import { selectTransports } from '402-mcp/fetch/transport'
 import { withTransportFallback } from '402-mcp/fetch/resilient-fetch'
 import { resolveHns } from '402-mcp/fetch/hns-resolve'
 import { TransportUnavailableError } from '402-mcp/fetch/errors'
+import { createSocksFetch, parseSocksProxyUrl } from '402-mcp/fetch/socks-proxy'
 
 // ── 1. Transport classification & selection ─────────────────────────
 
@@ -120,27 +121,28 @@ if (process.argv.includes('--live')) {
 
   const torProxy = process.env.TOR_PROXY || process.env.SOCKS_PROXY
   if (torProxy) {
-    console.log(`  Tor SOCKS proxy configured: ${torProxy}`)
+    const proxyUrl = parseSocksProxyUrl(process.env.TOR_PROXY ? 'TOR_PROXY' : 'SOCKS_PROXY', torProxy)
+    console.log(`  SOCKS5 proxy configured: ${proxyUrl.replace(/\/\/[^@]*@/, '//***@')}`)
     console.log('  .onion URLs will be routed through the proxy.')
 
-    // Test connectivity to Tor network via a known onion service
-    const testOnion = 'http://2gzyxa5ihm7nsber64sieskb3r4zgbz2uho0vwqqmdxpcokbaurxuca.onion/'
+    // The Tor Project's own onion service
+    const testOnion = 'http://2gzyxa5ihm7nsggfxnu52rck2vv4rvmdlkiu3zzui5du4xyclen53wid.onion/'
     console.log(`\n  Testing: ${testOnion}`)
     try {
       const ctrl = new AbortController()
-      setTimeout(() => ctrl.abort(), 10_000)
-      const resp = await fetch(testOnion, { signal: ctrl.signal })
+      setTimeout(() => ctrl.abort(), 30_000)
+      const resp = await createSocksFetch(proxyUrl)(testOnion, { signal: ctrl.signal, redirect: 'manual' })
       console.log(`  Result: ${resp.status} ${resp.statusText}`)
     } catch (err) {
       console.log(`  Result: ${(err as Error).message}`)
-      console.log('  (This is expected without a SOCKS-aware fetch implementation)')
+      console.log('  (Is Tor running and listening on that port?)')
     }
   } else {
     console.log('  No TOR_PROXY or SOCKS_PROXY configured.')
     console.log('  .onion URLs will be filtered out by selectTransports().')
     console.log('\n  To enable onion transport:')
     console.log('    1. Install Tor:  brew install tor && brew services start tor')
-    console.log('    2. Set proxy:    export TOR_PROXY=socks5://127.0.0.1:9050')
+    console.log('    2. Set proxy:    export TOR_PROXY=socks5h://127.0.0.1:9050')
     console.log('    3. Re-run:       npx tsx examples/multi-transport.ts --live')
   }
 } else {

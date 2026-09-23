@@ -1,4 +1,5 @@
 import { promises as dns } from 'node:dns'
+import { isIP } from 'node:net'
 import { SsrfError, TransportUnavailableError } from './errors.js'
 import type { ResolvedAddress } from './hns-resolve.js'
 
@@ -87,7 +88,16 @@ export interface ValidateUrlOptions {
   resolveHns?: (hostname: string) => Promise<ResolvedAddress>
   /** Whether a Tor SOCKS proxy is available — required for .onion URLs */
   hasTorProxy?: boolean
+  /**
+   * Every request goes through a SOCKS proxy that resolves names itself.
+   * No local DNS lookup is made (it would leak the host name around the
+   * proxy); IP literals and local-only names are still refused.
+   */
+  remoteDns?: boolean
 }
+
+/** Names that only ever mean this machine or its local network. */
+const LOCAL_NAME_RE = /(^|\.)(localhost|local|internal|lan|home\.arpa)$/i
 
 /**
  * Validate a URL against SSRF rules and return the resolved IP address.
@@ -105,6 +115,10 @@ export interface ValidateUrlOptions {
  * `.onion` hostnames:
  * - If `options.hasTorProxy` is true, returns `undefined` (route via SOCKS proxy; skip SSRF).
  * - Otherwise throws `TransportUnavailableError`.
+ *
+ * With `options.remoteDns` (all traffic via SOCKS), nothing is resolved here:
+ * IP literals are checked against the blocked ranges, local-only names are
+ * refused, and `undefined` is returned so nothing is pinned.
  *
  * HNS fallback:
  * - If standard DNS fails with NXDOMAIN (ENOTFOUND) and `options.resolveHns` is provided,
@@ -135,9 +149,17 @@ export async function validateUrl(
   const hostname = parsed.hostname.replace(/^\[/, '').replace(/\]$/, '').split('%')[0]
 
   // .onion: route via Tor SOCKS proxy — never attempt DNS resolution
-  if (hostname.endsWith('.onion')) {
+  const bareHost = hostname.replace(/\.$/, '')
+  if (bareHost.toLowerCase().endsWith('.onion')) {
     if (options.hasTorProxy) return undefined
     throw new TransportUnavailableError(url, 'Tor proxy required for .onion addresses')
+  }
+
+  if (options.remoteDns) {
+    const family = isIP(bareHost)
+    if (family) assertNotBlocked(bareHost, family, url)
+    else if (LOCAL_NAME_RE.test(bareHost)) throw new SsrfError('local host name', url)
+    return undefined
   }
 
   // Resolve ALL addresses to prevent multi-homed bypass where one A/AAAA

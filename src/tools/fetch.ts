@@ -264,6 +264,34 @@ export async function handleFetch(
     if (deps.isIETFPayment(response.headers)) {
       const ietfChallenge = deps.parseIETFPayment(wwwAuth)
       if (ietfChallenge?.invoice && ietfChallenge.amountSats) {
+        // The request's `amount` is only the server's claim; the invoice is
+        // what gets paid. Price every check on the invoice itself, and refuse
+        // a challenge whose claim and invoice disagree rather than pick one.
+        const ietfInvoice = deps.decodeBolt11(ietfChallenge.invoice)
+        const claimedHash = ietfChallenge.paymentHash?.toLowerCase()
+        if (
+          ietfInvoice.costSats === null ||
+          ietfInvoice.costSats !== ietfChallenge.amountSats ||
+          (claimedHash !== undefined && claimedHash !== ietfInvoice.paymentHash)
+        ) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: JSON.stringify({
+                status: 402,
+                protocol: 'ietf-payment',
+                error: 'Challenge does not match its invoice — refusing to pay',
+                claimedSats: ietfChallenge.amountSats,
+                invoiceSats: ietfInvoice.costSats,
+                message: ietfInvoice.costSats === null
+                  ? 'The invoice has no amount or could not be decoded.'
+                  : 'The amount or payment hash the server states differs from the invoice it asks you to pay.',
+              }, null, 2),
+            }],
+            isError: true as const,
+          }
+        }
+        ietfChallenge.paymentHash = ietfInvoice.paymentHash ?? undefined
         const ietfAutoPay = args.autoPay ?? false
         if (ietfAutoPay && ietfChallenge.amountSats <= deps.maxAutoPaySats) {
           const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)

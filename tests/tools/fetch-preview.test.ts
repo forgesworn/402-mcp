@@ -96,6 +96,7 @@ describe('handleFetchPreview', () => {
         }),
         json: async () => ({}),
       }) as unknown as FetchPreviewDeps['fetchFn'],
+      decodeBolt11: () => ({ paymentHash: HASH, costSats: 25, expiry: 3600 }),
       isIETFPayment: () => true,
       parseIETFPayment: () => ({
         id: 'abc',
@@ -120,6 +121,26 @@ describe('handleFetchPreview', () => {
     expect(parsed.costSats).toBe(25)
     expect(parsed.paymentHash).toBe(HASH)
     expect(parsed.realm).toBe('api.example.com')
+  })
+
+  it('previews the invoice amount when the IETF challenge understates it', async () => {
+    const deps = createDeps({
+      fetchFn: vi.fn().mockResolvedValue({
+        status: 402,
+        headers: new Headers({ 'www-authenticate': 'Payment id="abc"' }),
+        json: async () => ({}),
+      }) as unknown as FetchPreviewDeps['fetchFn'],
+      decodeBolt11: () => ({ paymentHash: HASH, costSats: 5_000_000, expiry: 3600 }),
+      isIETFPayment: () => true,
+      parseIETFPayment: () => ({
+        id: 'abc', realm: 'api.example.com', method: 'lightning', intent: 'charge',
+        request: 'r', invoice: 'lnbc50m1test', paymentHash: HASH, amountSats: 1,
+      }),
+    })
+
+    const parsed = JSON.parse((await handleFetchPreview({ url: 'https://api.example.com/data' }, deps)).content[0].text)
+    expect(parsed.costSats).toBe(5_000_000)
+    expect(parsed.message).toMatch(/refuse to pay/)
   })
 
   it('returns xcashu preview when challenge detected', async () => {
