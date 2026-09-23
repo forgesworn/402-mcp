@@ -27,7 +27,8 @@ Key environment variables:
 | `NWC_URI_FILE` | — | Absolute path to a private 0600 file containing the NWC bearer URI |
 | `CASHU_TOKENS` | — | Path to Cashu token store file |
 | `MAX_AUTO_PAY_SATS` | `1000` | Auto-pay threshold per request |
-| `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap |
+| `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap (`0` blocks auto-pay) |
+| `MAX_SPEND_PER_DAY_SATS` | `5000` | Rolling 24h spend cap, persisted in `~/.402-mcp/spend-ledger.json` (`0` blocks auto-pay) |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Path to credential store (must be within home dir) |
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3402` | HTTP transport listen port |

@@ -123,7 +123,7 @@ function paymentFailed(result: PayOutcome, costSats: number | null, paymentHash:
 
 /** Makes an HTTP request with automatic L402/x402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
-  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string },
+  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string; maxCostSats?: number },
   deps: FetchDeps,
 ) {
   // When multiple URLs are provided (from l402-search results), use transport fallback.
@@ -146,6 +146,12 @@ export async function handleFetch(
   // credentials are shared across all transport URLs for the same service.
   // For direct URL calls without a pubkey, fall back to origin-based keying.
   const credKey = args.pubkey ?? origin
+  // The most this call may auto-pay. maxCostSats lets an agent hold the server
+  // to the price it showed in a preview; it can only lower the configured cap.
+  const autoPayCap = args.maxCostSats !== undefined ? Math.min(args.maxCostSats, deps.maxAutoPaySats) : deps.maxAutoPaySats
+  const capLabel = args.maxCostSats !== undefined && args.maxCostSats < deps.maxAutoPaySats
+    ? `maxCostSats (${args.maxCostSats})`
+    : `MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats})`
   const cred = deps.credentialStore.get(credKey)
   const reqHeaders: Record<string, string> = {}
   // Copy user headers, stripping dangerous hop-by-hop/security-sensitive ones
@@ -240,7 +246,7 @@ export async function handleFetch(
       const lnurlcashChallenge = deps.parseLnurlcash(lnurlcashHeader)
       if (lnurlcashChallenge) {
         const lnurlcashAutoPay = args.autoPay ?? false
-        if (lnurlcashAutoPay && lnurlcashChallenge.amount <= deps.maxAutoPaySats) {
+        if (lnurlcashAutoPay && lnurlcashChallenge.amount <= autoPayCap) {
           const lnurlcashWithinLimit = deps.spendTracker.tryRecord(lnurlcashChallenge.amount, deps.maxSpendPerMinuteSats)
           if (lnurlcashWithinLimit) {
             const lnurlcashResult = await deps.payLnurlcash(lnurlcashChallenge)
@@ -289,7 +295,7 @@ export async function handleFetch(
       const xcashuChallenge = deps.parseXCashu(xcashuHeader)
       if (xcashuChallenge) {
         const xcashuAutoPay = args.autoPay ?? false
-        if (xcashuAutoPay && xcashuChallenge.amount <= deps.maxAutoPaySats) {
+        if (xcashuAutoPay && xcashuChallenge.amount <= autoPayCap) {
           const xcashuWithinLimit = deps.spendTracker.tryRecord(xcashuChallenge.amount, deps.maxSpendPerMinuteSats)
           if (xcashuWithinLimit) {
             const xcashuResult = await deps.payXCashu(xcashuChallenge)
@@ -375,7 +381,7 @@ export async function handleFetch(
         }
         ietfChallenge.paymentHash = ietfInvoice.paymentHash ?? undefined
         const ietfAutoPay = args.autoPay ?? false
-        if (ietfAutoPay && ietfChallenge.amountSats <= deps.maxAutoPaySats) {
+        if (ietfAutoPay && ietfChallenge.amountSats <= autoPayCap) {
           const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)
           if (ietfWithinLimit) {
             const ietfPayResult = await deps.payInvoice(ietfChallenge.invoice, { serverOrigin: origin })
@@ -430,26 +436,26 @@ export async function handleFetch(
             }
           }
         }
-        // IETF Payment detected but not auto-paid — return challenge details
-        if (!ietfAutoPay || ietfChallenge.amountSats > deps.maxAutoPaySats) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                status: 402,
-                protocol: 'ietf-payment',
-                costSats: ietfChallenge.amountSats,
-                paymentHash: ietfChallenge.paymentHash,
-                realm: ietfChallenge.realm,
-                intent: ietfChallenge.intent,
-                message: !ietfAutoPay
-                  ? `Payment of ${ietfChallenge.amountSats} sats required (IETF Payment). autoPay disabled.`
-                  : `Payment of ${ietfChallenge.amountSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`,
-              }, null, 2),
-            }],
-          }
+        // IETF Payment detected but not auto-paid: return challenge details.
+        // Never fall through to another rail for the same request.
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 402,
+              protocol: 'ietf-payment',
+              costSats: ietfChallenge.amountSats,
+              paymentHash: ietfChallenge.paymentHash,
+              realm: ietfChallenge.realm,
+              intent: ietfChallenge.intent,
+              message: !ietfAutoPay
+                ? `Payment of ${ietfChallenge.amountSats} sats required (IETF Payment). autoPay disabled.`
+                : ietfChallenge.amountSats > autoPayCap
+                  ? `Payment of ${ietfChallenge.amountSats} sats required. Exceeds ${capLabel}.`
+                  : `Payment of ${ietfChallenge.amountSats} sats required. ${deps.spendTracker.refusal(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.'}`,
+            }, null, 2),
+          }],
         }
-        // Fall through to L402 if spend limit reached
       }
     }
 
@@ -480,7 +486,7 @@ export async function handleFetch(
     // otherwise tryRecord inflates the spend tracker and blocks legitimate payments.
     // For human wallets, allow re-purchase even when credits are exhausted —
     // the human decides whether to pay by scanning the QR code.
-    const shouldAttemptPay = (!creditsExhausted || isHumanWallet) && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats
+    const shouldAttemptPay = (!creditsExhausted || isHumanWallet) && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= autoPayCap
     // Use tryRecord as the authoritative gate — atomically checks AND records
     // the spend before payment, closing the TOCTOU gap between check and pay.
     const withinSpendLimit = shouldAttemptPay && deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
@@ -639,10 +645,10 @@ export async function handleFetch(
       ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402-buy-credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
       : !autoPay
         ? `Payment of ${decoded.costSats} sats required. autoPay disabled.`
-        : decoded.costSats !== null && decoded.costSats > deps.maxAutoPaySats
-          ? `Payment of ${decoded.costSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`
+        : decoded.costSats !== null && decoded.costSats > autoPayCap
+          ? `Payment of ${decoded.costSats} sats required. Exceeds ${capLabel}.`
           : !withinSpendLimit
-            ? 'Per-minute spend limit reached.'
+            ? (deps.spendTracker.refusal(decoded.costSats ?? 0, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.')
             : `Payment of ${decoded.costSats} sats required.`
     return {
       content: [{
@@ -685,6 +691,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
         autoPay: z.boolean().optional().default(false).describe('Automatically pay if within MAX_AUTO_PAY_SATS budget'),
         pubkey: z.string().max(128).optional().describe('Service pubkey from l402-search results — used to share credentials across all transport URLs for the same service'),
         txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional().describe('Transaction hash from a completed x402 on-chain payment. When provided, retries the request with X-Payment header for server verification.'),
+        maxCostSats: z.number().int().nonnegative().optional().describe('Most this call may pay, in sats. Pass the price the user saw in l402-fetch-preview so a server cannot charge more than it showed. Lowers MAX_AUTO_PAY_SATS for this call; never raises it.'),
       },
     },
     async (args) => handleFetch(args, deps),

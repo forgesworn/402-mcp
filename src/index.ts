@@ -76,7 +76,10 @@ if (lnurlcashNoteStore) await lnurlcashNoteStore.init()
 const pendingPayments = new PendingPaymentStore(join(dirname(config.credentialStorePath), 'pending-payments.json'))
 await pendingPayments.init()
 const challengeCache = new ChallengeCache()
-const spendTracker = new SpendTracker()
+const spendTracker = new SpendTracker({
+  maxPerDaySats: config.maxSpendPerDaySats,
+  statePath: join(dirname(config.credentialStorePath), 'spend-ledger.json'),
+})
 
 // Wallet providers (priority order: NWC > Cashu > human)
 const walletProviders: WalletProvider[] = []
@@ -216,6 +219,9 @@ registerConfigTool(server, () => ({
   cashuConfigured: !!cashuTokenStore && cashuTokenStore.totalBalance() > 0,
   cashuBalanceSats: cashuTokenStore?.totalBalance() ?? 0,
   maxAutoPaySats: config.maxAutoPaySats,
+  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+  maxSpendPerDaySats: config.maxSpendPerDaySats,
+  spentLast24HoursSats: spendTracker.dailySpend(),
   credentialCount: credentialStore.count(),
 }))
 

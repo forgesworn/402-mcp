@@ -824,4 +824,23 @@ describe('handleFetch lnurlcash rail', () => {
 
     expect(payLnurlcash).not.toHaveBeenCalled()
   })
+
+  it('does not pay more than maxCostSats even when MAX_AUTO_PAY_SATS allows it', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc500n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc500n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }),
+      maxAutoPaySats: 100,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true, maxCostSats: 40 }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(deps.payInvoice).not.toHaveBeenCalled()
+    expect(parsed.status).toBe(402)
+    expect(parsed.message).toContain('maxCostSats (40)')
+  })
 })

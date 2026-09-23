@@ -153,7 +153,7 @@ export async function handleBuyCredits(
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ error: 'Per-minute spend limit reached.' }),
+          text: JSON.stringify({ error: deps.spendTracker.refusal(spendAmount, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.' }),
         }],
         isError: true as const,
       }

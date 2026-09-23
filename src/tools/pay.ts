@@ -146,7 +146,7 @@ export async function handlePay(
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ paid: false, reason: 'Per-minute spend limit reached.' }),
+        text: JSON.stringify({ paid: false, reason: deps.spendTracker.refusal(costSats, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.' }),
       }],
       isError: true as const,
     }

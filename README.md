@@ -79,7 +79,9 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `NWC_URI_FILE` | - | Path to a private `0600` file containing the NWC bearer URI |
 | `CASHU_TOKENS` | - | Path to Cashu token store file |
 | `LNURLCASH_NOTES` | - | Path to LNURLcash bearer note store file (LUD-25) |
-| `MAX_AUTO_PAY_SATS` | 1000 | Safety cap; payments above this require human confirmation |
+| `MAX_AUTO_PAY_SATS` | 1000 | Most a single automatic payment may cost. Anything dearer is not paid; the challenge goes back to the agent |
+| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Automatic spend allowed in any rolling 60 seconds. `0` blocks all auto-pay |
+| `MAX_SPEND_PER_DAY_SATS` | 5000 | Automatic spend allowed in any rolling 24 hours, kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` blocks all auto-pay |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
@@ -156,9 +158,16 @@ straight into the retry header and the server settles it. When the price does
 not match a note exactly, one is split at the mint and the change stays in the
 store. If no note covers it, the other rails are tried as usual.
 
-## Safety
+## Spending limits
 
-`MAX_AUTO_PAY_SATS` caps any single autonomous payment. Above this limit, the agent must ask the human for approval. The agent can read this limit via `l402-config` and factor it into purchasing decisions.
+402-mcp checks every automatic payment against these, and the agent can read them with `l402-config`:
+
+- `MAX_AUTO_PAY_SATS` caps each payment. A dearer challenge is returned to the agent unpaid.
+- `maxCostSats` on `l402-fetch` lowers that cap for one call, so the price shown by `l402-fetch-preview` is binding. It can never raise it.
+- `MAX_SPEND_PER_MINUTE_SATS` and `MAX_SPEND_PER_DAY_SATS` cap total automatic spend over rolling windows. The daily window is persisted, so restarting the server does not reset it. `0` in either blocks auto-pay entirely.
+- A payment whose outcome is unknown pauses auto-pay to that service until `l402-reconcile` resolves it, so the same thing is not bought twice.
+
+**The real hard limit is the budget on your NWC connection.** Everything above is enforced in software by this process, on the machine it runs on. Most NWC wallets let you set a spending budget when you create the connection; set one, because that is the limit a bug or a misbehaving agent cannot raise. For Cashu and LNURLcash, the hard limit is what you put in the token or note store.
 
 ## Privacy
 
@@ -185,7 +194,7 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 | **Payer methods** | NWC + Cashu + human fallback | Lightning only |
 | **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
 | **Server compatibility** | Any L402 server | Aperture-focused |
-| **Spend safety** | Per-payment cap + rolling 60s window | Per-call max-cost |
+| **Spend safety** | Per-payment cap, per-call max cost, rolling 60s and persisted 24h windows | Per-call max-cost |
 | **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
 | **Privacy** | No PII, SSRF protection, error sanitisation | Standard |
 

@@ -57,6 +57,13 @@ describe('config validation', () => {
     expect(() => loadConfig()).toThrow('FETCH_MAX_RETRIES')
   })
 
+  it('defaults MAX_SPEND_PER_DAY_SATS to 5000 and rejects a negative one', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().maxSpendPerDaySats).toBe(5000)
+    vi.stubEnv('MAX_SPEND_PER_DAY_SATS', '-1')
+    expect(() => loadConfig()).toThrow('MAX_SPEND_PER_DAY_SATS')
+  })
+
   it('accepts valid defaults (no env vars set)', async () => {
     const { loadConfig } = await import('../src/config.js')
     expect(() => loadConfig()).not.toThrow()

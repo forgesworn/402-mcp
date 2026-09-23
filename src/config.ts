@@ -10,6 +10,8 @@ export interface L402Config {
   lnurlcashNotesPath: string | undefined
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
+  /** Auto-pay cap over any rolling 24 hours, persisted across restarts. 0 blocks auto-pay. */
+  maxSpendPerDaySats: number
   credentialStorePath: string
   transport: 'stdio' | 'http'
   port: number
@@ -121,6 +123,7 @@ export function loadConfig(): L402Config {
     lnurlcashNotesPath: process.env.LNURLCASH_NOTES,
     maxAutoPaySats: parseInt(process.env.MAX_AUTO_PAY_SATS ?? '1000', 10),
     maxSpendPerMinuteSats: parseInt(process.env.MAX_SPEND_PER_MINUTE_SATS ?? '10000', 10),
+    maxSpendPerDaySats: parseInt(process.env.MAX_SPEND_PER_DAY_SATS ?? '5000', 10),
     credentialStorePath: process.env.CREDENTIAL_STORE ?? defaultCredentialStore,
     transport,
     port: parseInt(process.env.PORT ?? '3402', 10),
@@ -139,6 +142,7 @@ export function loadConfig(): L402Config {
 
   assertNonNegativeInt('MAX_AUTO_PAY_SATS', config.maxAutoPaySats)
   assertNonNegativeInt('MAX_SPEND_PER_MINUTE_SATS', config.maxSpendPerMinuteSats)
+  assertNonNegativeInt('MAX_SPEND_PER_DAY_SATS', config.maxSpendPerDaySats)
   assertRange('PORT', config.port, 1, 65535)
   assertPositiveInt('FETCH_TIMEOUT_MS', config.fetchTimeoutMs)
   assertNonNegativeInt('FETCH_MAX_RETRIES', config.fetchMaxRetries)
