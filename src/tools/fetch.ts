@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CredentialStore } from '../store/credentials.js'
+import type { CredentialStore, StoredCredential } from '../store/credentials.js'
 import type { L402Challenge } from '../l402/parse.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ServerInfo } from '../l402/detect.js'
@@ -121,6 +121,20 @@ function paymentFailed(result: PayOutcome, costSats: number | null, paymentHash:
   }
 }
 
+/**
+ * Whether a stored credential may be sent to every one of `origins`. One
+ * stored before origins were recorded is bound only to the origin it is keyed
+ * by, if it is keyed by one.
+ */
+function isBoundTo(cred: StoredCredential, key: string, origins: string[]): boolean {
+  const bound = cred.origins ?? (isOrigin(key) ? [key] : [])
+  return origins.every(o => bound.includes(o))
+}
+
+function isOrigin(value: string): boolean {
+  try { return new URL(value).origin === value } catch { return false }
+}
+
 /** Makes an HTTP request with automatic L402/x402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
   args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string; maxCostSats?: number },
@@ -145,14 +159,28 @@ export async function handleFetch(
   // When a pubkey is provided (from search results) use it as the credential key so
   // credentials are shared across all transport URLs for the same service.
   // For direct URL calls without a pubkey, fall back to origin-based keying.
-  const credKey = args.pubkey ?? origin
+  //
+  // The pubkey is only the agent's claim, so a credential is sent only to the
+  // origins it was bought from: `url=https://evil pubkey=<X>` must not hand
+  // X's credential to evil. A credential that is not bound to every origin
+  // this request may reach is left alone, and anything bought here is kept
+  // under the origin instead so it cannot overwrite X's.
+  let credKey = args.pubkey ?? origin
+  let cred = deps.credentialStore.get(credKey)
+  if (cred && !isBoundTo(cred, credKey, candidateOrigins)) {
+    cred = undefined
+    if (args.pubkey) {
+      credKey = origin
+      cred = deps.credentialStore.get(credKey)
+      if (cred && !isBoundTo(cred, credKey, candidateOrigins)) cred = undefined
+    }
+  }
   // The most this call may auto-pay. maxCostSats lets an agent hold the server
   // to the price it showed in a preview; it can only lower the configured cap.
   const autoPayCap = args.maxCostSats !== undefined ? Math.min(args.maxCostSats, deps.maxAutoPaySats) : deps.maxAutoPaySats
   const capLabel = args.maxCostSats !== undefined && args.maxCostSats < deps.maxAutoPaySats
     ? `maxCostSats (${args.maxCostSats})`
     : `MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats})`
-  const cred = deps.credentialStore.get(credKey)
   const reqHeaders: Record<string, string> = {}
   // Copy user headers, stripping dangerous hop-by-hop/security-sensitive ones
   if (args.headers) {
@@ -601,6 +629,7 @@ export async function handleFetch(
 
       // Store credential and retry
       deps.credentialStore.set(credKey, {
+        origins: candidateOrigins,
         macaroon: challenge.macaroon,
         preimage: payResult.preimage,
         paymentHash: decoded.paymentHash ?? '',

