@@ -16,8 +16,8 @@ npm run typecheck   # tsc --noEmit
 # Stdio transport (default — used by MCP clients like Claude Desktop)
 node build/index.js
 
-# HTTP transport (for network access, e.g. behind a reverse proxy)
-TRANSPORT=http PORT=3402 node build/index.js
+# HTTP transport (needs a bearer token file; stateless, one server per request)
+TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token PORT=3402 node build/index.js
 ```
 
 Key environment variables:
@@ -33,6 +33,8 @@ Key environment variables:
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3402` | HTTP transport listen port |
 | `BIND_ADDRESS` | `127.0.0.1` | HTTP transport bind address |
+| `HTTP_AUTH_TOKEN_FILE` | — | Private 0600 bearer token file; required for `TRANSPORT=http` |
+| `HTTP_ALLOWED_HOSTS` | — | Extra Host header values for DNS rebinding protection |
 | `CORS_ORIGIN` | `false` | CORS origin for HTTP transport (`*` or specific origin) |
 | `HUMAN_PAY_TIMEOUT_S` | `600` | Timeout for human wallet QR payment (seconds) |
 | `HUMAN_PAY_POLL_S` | `3` | Poll interval for human wallet payment (seconds) |

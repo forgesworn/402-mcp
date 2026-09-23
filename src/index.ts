@@ -204,150 +204,167 @@ function storeCredential(origin: string, macaroon: string, preimage: string, pay
   return true
 }
 
-// Create MCP server
-const server = new McpServer({
-  name: '402-mcp',
-  version,
-  description: 'Payment network for paid APIs and services. Discovers services via Nostr (kind 31402), handles Lightning payments automatically. When a user asks for something that might be a paid service — jokes, data, content, AI, weather — use l402-search to find it, then l402-fetch (autoPay: true) to access it. If human payment is needed, show the payment URL, call l402-pay to poll for confirmation, then retry. The user never needs to know about L402 or payment details.',
-}, {
-  instructions: 'Call l402-config first to check wallet capabilities and spend limits. Use l402-search to discover paid services on Nostr before calling l402-fetch. When l402-fetch returns payment_required, either set autoPay: true to pay automatically (if within budget) or show the payment URL to the user. Call l402-discover to probe pricing before committing to a paid request. Use l402-credentials to check stored credentials before re-paying for a service.',
-})
-
-// Register all tools
-registerConfigTool(server, () => ({
-  nwcConfigured: !!config.nwcUri,
-  cashuConfigured: !!cashuTokenStore && cashuTokenStore.totalBalance() > 0,
-  cashuBalanceSats: cashuTokenStore?.totalBalance() ?? 0,
-  maxAutoPaySats: config.maxAutoPaySats,
-  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
-  maxSpendPerDaySats: config.maxSpendPerDaySats,
-  spentLast24HoursSats: spendTracker.dailySpend(),
-  credentialCount: credentialStore.count(),
-}))
-
-registerDiscoverTool(server, {
-  fetchFn: resilientFetch,
-  cache: challengeCache,
-  decodeBolt11,
-})
-
-registerFetchTool(server, {
-  credentialStore,
-  fetchFn: resilientFetch,
-  transportFetch: (urls, init) =>
-    withTransportFallback(
-      selectTransports(urls, config.transportPreference, { hasTorProxy: config.proxy !== undefined }),
-      init,
-      resilientFetch,
-    ),
-  payInvoice,
-  maxAutoPaySats: config.maxAutoPaySats,
-  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
-  spendTracker,
-  parseL402: parseL402Challenge,
-  decodeBolt11,
-  detectServer,
-  challengeCache,
-  generateQr,
-  walletMethod: () => getWallet()?.method,
-  isX402: isX402Challenge,
-  parseX402: parseX402Challenge,
-  formatX402: formatX402PaymentRequest,
-  isLnurlcash: isLnurlcashChallenge,
-  parseLnurlcash: parseLnurlcashChallenge,
-  payLnurlcash: lnurlcashNoteStore
-    ? (challenge) => withLnurlcashLock(() => attemptLnurlcashPayment({ challenge, noteStore: lnurlcashNoteStore }))
-    : () => Promise.resolve(null),
-  isXCashu: isXCashuChallenge,
-  parseXCashu: parseXCashuChallenge,
-  payXCashu: cashuTokenStore
-    ? (challenge) => withCashuLock(() => attemptXCashuPayment({ challenge, tokenStore: cashuTokenStore }))
-    : async () => null,
-  isIETFPayment: isIETFPaymentChallenge,
-  parseIETFPayment: parseIETFPaymentChallenge,
-  buildIETFCredential: buildIETFPaymentCredential,
-  pendingPayments,
-})
-
-registerPayTool(server, {
-  cache: challengeCache,
-  resolveWallet: getWallet,
-  storeCredential,
-  maxAutoPaySats: config.maxAutoPaySats,
-  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
-  spendTracker,
-  decodeBolt11,
-  fetchFn: resilientFetch,
-  pendingPayments,
-})
-
-registerCredentialsTool(server, credentialStore)
-registerBalanceTool(server, credentialStore)
-registerStoreTokenTool(server, {
-  storeCredential,
-})
-
-registerBuyCreditsTool(server, {
-  fetchFn: resilientFetch,
-  payInvoice,
-  storeCredential: (origin, macaroon, preimage, paymentHash) =>
-    storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
-  decodeBolt11,
-  maxAutoPaySats: config.maxAutoPaySats,
-  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
-  spendTracker,
-  generateQr,
-  walletMethod: () => getWallet()?.method,
-  pendingPayments,
-})
-
-registerReconcileTool(server, {
-  pendingPayments,
-  lookupPayment,
-  storeCredential,
-  confirmWithHuman: createElicitConfirm(server),
-})
-
-registerRedeemCashuTool(server, {
-  fetchFn: resilientFetch,
-  storeCredential: (origin, macaroon, preimage, paymentHash) =>
-    storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
-  removeToken: (tokenStr) => cashuTokenStore?.remove(tokenStr),
-  decodeToken: (token: string) => {
-    // Lazy-import cashu-ts to avoid top-level await; decode is synchronous
-    const { getDecodedToken } = require('@cashu/cashu-ts') as { getDecodedToken: (token: string) => { proofs: Array<{ amount: number }> } }
-    return getDecodedToken(token)
-  },
-  maxAutoPaySats: config.maxAutoPaySats,
-  maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
-  spendTracker,
-})
-
-registerSearchTool(server, { subscribeEvents: createNostrSubscriber(config.ssrfAllowPrivate) })
-
-// Register fetch-preview (read-only, no spend capability)
-registerFetchPreviewTool(server, {
-  fetchFn: resilientFetch,
-  challengeCache,
-  decodeBolt11,
-  parseL402: parseL402Challenge,
-  isX402: isX402Challenge,
-  parseX402: parseX402Challenge,
-  isXCashu: isXCashuChallenge,
-  parseXCashu: parseXCashuChallenge,
-  isLnurlcash: isLnurlcashChallenge,
-  parseLnurlcash: parseLnurlcashChallenge,
-  isIETFPayment: isIETFPaymentChallenge,
-  parseIETFPayment: parseIETFPaymentChallenge,
-  walletMethod: () => getWallet()?.method,
-})
-
-// Widget registration (graceful if widgets not built)
+// Widget registration is optional (graceful if widgets not built)
+let registerWidgets: ((server: McpServer) => void) | undefined
 try {
-  const { registerWidgets } = await import('./tools/register-widgets.js')
-  registerWidgets(server)
+  ({ registerWidgets } = await import('./tools/register-widgets.js'))
 } catch (e) {
   console.error('Widget registration skipped (build widgets first):', (e as Error).message)
+}
+
+/**
+ * Builds an MCP server with every tool registered. Stores, wallets and spend
+ * tracking are shared module state, so each server built here draws on the
+ * same budget and ledgers. stdio uses one; the stateless HTTP transport
+ * builds one per request, as the SDK requires.
+ */
+function buildServer(): McpServer {
+  const server = new McpServer({
+    name: '402-mcp',
+    version,
+    description: 'Payment network for paid APIs and services. Discovers services via Nostr (kind 31402), handles Lightning payments automatically. When a user asks for something that might be a paid service — jokes, data, content, AI, weather — use l402-search to find it, then l402-fetch (autoPay: true) to access it. If human payment is needed, show the payment URL, call l402-pay to poll for confirmation, then retry. The user never needs to know about L402 or payment details.',
+  }, {
+    instructions: 'Call l402-config first to check wallet capabilities and spend limits. Use l402-search to discover paid services on Nostr before calling l402-fetch. When l402-fetch returns payment_required, either set autoPay: true to pay automatically (if within budget) or show the payment URL to the user. Call l402-discover to probe pricing before committing to a paid request. Use l402-credentials to check stored credentials before re-paying for a service.',
+  })
+
+  // Register all tools
+  registerConfigTool(server, () => ({
+    nwcConfigured: !!config.nwcUri,
+    cashuConfigured: !!cashuTokenStore && cashuTokenStore.totalBalance() > 0,
+    cashuBalanceSats: cashuTokenStore?.totalBalance() ?? 0,
+    maxAutoPaySats: config.maxAutoPaySats,
+    maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+    maxSpendPerDaySats: config.maxSpendPerDaySats,
+    spentLast24HoursSats: spendTracker.dailySpend(),
+    credentialCount: credentialStore.count(),
+  }))
+
+  registerDiscoverTool(server, {
+    fetchFn: resilientFetch,
+    cache: challengeCache,
+    decodeBolt11,
+  })
+
+  registerFetchTool(server, {
+    credentialStore,
+    fetchFn: resilientFetch,
+    transportFetch: (urls, init) =>
+      withTransportFallback(
+        selectTransports(urls, config.transportPreference, { hasTorProxy: config.proxy !== undefined }),
+        init,
+        resilientFetch,
+      ),
+    payInvoice,
+    maxAutoPaySats: config.maxAutoPaySats,
+    maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+    spendTracker,
+    parseL402: parseL402Challenge,
+    decodeBolt11,
+    detectServer,
+    challengeCache,
+    generateQr,
+    walletMethod: () => getWallet()?.method,
+    isX402: isX402Challenge,
+    parseX402: parseX402Challenge,
+    formatX402: formatX402PaymentRequest,
+    isLnurlcash: isLnurlcashChallenge,
+    parseLnurlcash: parseLnurlcashChallenge,
+    payLnurlcash: lnurlcashNoteStore
+      ? (challenge) => withLnurlcashLock(() => attemptLnurlcashPayment({ challenge, noteStore: lnurlcashNoteStore }))
+      : () => Promise.resolve(null),
+    isXCashu: isXCashuChallenge,
+    parseXCashu: parseXCashuChallenge,
+    payXCashu: cashuTokenStore
+      ? (challenge) => withCashuLock(() => attemptXCashuPayment({ challenge, tokenStore: cashuTokenStore }))
+      : async () => null,
+    isIETFPayment: isIETFPaymentChallenge,
+    parseIETFPayment: parseIETFPaymentChallenge,
+    buildIETFCredential: buildIETFPaymentCredential,
+    pendingPayments,
+  })
+
+  registerPayTool(server, {
+    cache: challengeCache,
+    resolveWallet: getWallet,
+    storeCredential,
+    maxAutoPaySats: config.maxAutoPaySats,
+    maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+    spendTracker,
+    decodeBolt11,
+    fetchFn: resilientFetch,
+    pendingPayments,
+  })
+
+  registerCredentialsTool(server, credentialStore)
+  registerBalanceTool(server, credentialStore)
+  registerStoreTokenTool(server, {
+    storeCredential,
+  })
+
+  registerBuyCreditsTool(server, {
+    fetchFn: resilientFetch,
+    payInvoice,
+    storeCredential: (origin, macaroon, preimage, paymentHash) =>
+      storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
+    decodeBolt11,
+    maxAutoPaySats: config.maxAutoPaySats,
+    maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+    spendTracker,
+    generateQr,
+    walletMethod: () => getWallet()?.method,
+    pendingPayments,
+  })
+
+  registerReconcileTool(server, {
+    pendingPayments,
+    lookupPayment,
+    storeCredential,
+    confirmWithHuman: createElicitConfirm(server),
+  })
+
+  registerRedeemCashuTool(server, {
+    fetchFn: resilientFetch,
+    storeCredential: (origin, macaroon, preimage, paymentHash) =>
+      storeCredential(origin, macaroon, preimage, paymentHash, 'toll-booth'),
+    removeToken: (tokenStr) => cashuTokenStore?.remove(tokenStr),
+    decodeToken: (token: string) => {
+      // Lazy-import cashu-ts to avoid top-level await; decode is synchronous
+      const { getDecodedToken } = require('@cashu/cashu-ts') as { getDecodedToken: (token: string) => { proofs: Array<{ amount: number }> } }
+      return getDecodedToken(token)
+    },
+    maxAutoPaySats: config.maxAutoPaySats,
+    maxSpendPerMinuteSats: config.maxSpendPerMinuteSats,
+    spendTracker,
+  })
+
+  registerSearchTool(server, { subscribeEvents: createNostrSubscriber(config.ssrfAllowPrivate) })
+
+  // Register fetch-preview (read-only, no spend capability)
+  registerFetchPreviewTool(server, {
+    fetchFn: resilientFetch,
+    challengeCache,
+    decodeBolt11,
+    parseL402: parseL402Challenge,
+    isX402: isX402Challenge,
+    parseX402: parseX402Challenge,
+    isXCashu: isXCashuChallenge,
+    parseXCashu: parseXCashuChallenge,
+    isLnurlcash: isLnurlcashChallenge,
+    parseLnurlcash: parseLnurlcashChallenge,
+    isIETFPayment: isIETFPaymentChallenge,
+    parseIETFPayment: parseIETFPaymentChallenge,
+    walletMethod: () => getWallet()?.method,
+  })
+
+  if (registerWidgets) {
+    try {
+      registerWidgets(server)
+    } catch (e) {
+      console.error('Widget registration skipped:', (e as Error).message)
+    }
+  }
+
+  return server
 }
 
 // Start transport
@@ -416,23 +433,36 @@ if (config.transport === 'http') {
     })
   })
 
-  const transport = new StreamableHTTPServerTransport({})
-
-  await server.connect(transport)
-
-  app.post('/mcp', async (req, res) => {
+  const { allowedHostsFor, bearerAuth } = await import('./http-security.js')
+  const allowedHosts = allowedHostsFor(config.bindAddress, config.port, config.httpAllowedHosts)
+  if (allowedHosts.length === 0) {
+    throw new Error(`BIND_ADDRESS ${config.bindAddress} gives no Host names to accept; list them in HTTP_ALLOWED_HOSTS`)
+  }
+  // Stateless mode: a transport handles exactly one request, so each request
+  // gets its own transport and server.
+  app.post('/mcp', bearerAuth(config.httpAuthToken!), async (req, res) => {
+    const server = buildServer()
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableDnsRebindingProtection: true,
+      allowedHosts,
+    })
+    res.on('close', () => {
+      void transport.close()
+      void server.close()
+    })
+    await server.connect(transport)
     await transport.handleRequest(req, res, req.body)
   })
 
   const httpServer = app.listen(config.port, config.bindAddress, () => {
     console.error(`402-mcp HTTP server listening on ${config.bindAddress}:${config.port}`)
-    console.error('Warning: HTTP transport is intended for local/trusted networks only. For public exposure, use a reverse proxy with TLS, rate limiting, and authentication.')
+    console.error(`Accepting Host: ${allowedHosts.join(', ')}. Clients must send Authorization: Bearer <token from HTTP_AUTH_TOKEN_FILE>.`)
   })
 
-  const shutdown = async () => {
+  const shutdown = () => {
     clearInterval(rateBucketCleanup)
     console.error('Shutting down gracefully…')
-    await server.close()
     httpServer.close(() => process.exit(0))
     setTimeout(() => process.exit(1), 5000).unref()
   }
@@ -444,7 +474,7 @@ if (config.transport === 'http') {
   )
 
   const transport = new StdioServerTransport()
-  await server.connect(transport)
+  await buildServer().connect(transport)
 
   console.error('402-mcp server running on stdio')
 }

@@ -85,6 +85,9 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
+| `BIND_ADDRESS` | `127.0.0.1` | HTTP bind address |
+| `HTTP_AUTH_TOKEN_FILE` | - | Private `0600` file holding the bearer token HTTP clients must send. Required when `TRANSPORT=http` |
+| `HTTP_ALLOWED_HOSTS` | - | Extra `Host` header values the HTTP transport accepts (comma-separated), such as a reverse proxy's name |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services (comma-separated) |
 | `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses only (e.g. `socks5h://127.0.0.1:9050`) |
 | `SOCKS_PROXY` | - | SOCKS5 proxy for every paid-API request (e.g. Tor at `socks5h://127.0.0.1:9050`). Set this or `TOR_PROXY`, not both |

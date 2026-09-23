@@ -352,13 +352,16 @@ npx 402-mcp
 
 ### HTTP
 
-StreamableHTTP transport for network access. Useful for remote agents, multi-client setups, or deployment behind a reverse proxy.
+StreamableHTTP transport, stateless. Prefer stdio wherever the client can start a local process: the HTTP transport can spend from the wallet.
 
 ```bash
-TRANSPORT=http PORT=3402 npx 402-mcp
+openssl rand -hex 32 > ~/.402-mcp/http.token && chmod 600 ~/.402-mcp/http.token
+TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token PORT=3402 npx 402-mcp
 ```
 
 HTTP transport includes:
+- Bearer token required on every request (`HTTP_AUTH_TOKEN_FILE`, a private 0600 file); the server refuses to start in http mode without one
+- DNS rebinding protection: only requests whose `Host` header is a loopback name with the port, the bound address, or listed in `HTTP_ALLOWED_HOSTS` are answered
 - Rate limiting: 100 requests per 60 seconds per IP
 - Security headers: CSP, X-Frame-Options, X-Content-Type-Options, Cache-Control
 - Loopback-only binding by default (`BIND_ADDRESS=127.0.0.1`)
@@ -377,6 +380,8 @@ HTTP transport includes:
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http`. |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`). |
 | `BIND_ADDRESS` | `127.0.0.1` | HTTP bind address. Warning emitted for non-loopback addresses. |
+| `HTTP_AUTH_TOKEN_FILE` | — | Private 0600 file holding the bearer token (32+ characters). Required when `TRANSPORT=http`. Raw HTTP_AUTH_TOKEN is refused. |
+| `HTTP_ALLOWED_HOSTS` | — | Extra `Host` header values to accept (comma-separated), e.g. a reverse proxy's name. |
 | `CORS_ORIGIN` | disabled | CORS origin for HTTP transport. |
 | `FETCH_TIMEOUT_MS` | 30000 | HTTP request timeout in milliseconds. |
 | `FETCH_MAX_RETRIES` | 2 | Maximum retry attempts for failed requests. Money-mutating POSTs use 0. |

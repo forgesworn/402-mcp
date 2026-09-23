@@ -14,11 +14,14 @@ Run instantly with no configuration required:
 npx 402-mcp
 ```
 
-For HTTP transport (useful for remote agents or multi-client setups):
+Use stdio wherever the client can start a local process. The HTTP transport can spend from your wallet, so it refuses to start without a bearer token, and only answers requests whose `Host` header it recognises:
 
 ```bash
-TRANSPORT=http npx 402-mcp
+openssl rand -hex 32 > ~/.402-mcp/http.token && chmod 600 ~/.402-mcp/http.token
+TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token npx 402-mcp
 ```
+
+Clients send `Authorization: Bearer <token>`. It listens on `127.0.0.1` only by default. To reach it from another machine, put it behind a TLS reverse proxy and add the proxy's host name to `HTTP_ALLOWED_HOSTS`; never expose it directly.
 
 ### Claude Desktop / Cursor
 
