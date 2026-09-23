@@ -28,6 +28,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.2.2 (2026-09-23)
+
+### Bug Fixes
+
+- stop IETF Payment wallet drain; make TOR_PROXY and SOCKS_PROXY real (#43)
+
+
+
 ## 4.2.1 (2026-08-22)
 
 ### Bug Fixes
