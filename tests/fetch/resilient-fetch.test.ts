@@ -365,6 +365,30 @@ describe('createResilientFetch', () => {
       expect(headers.get('Authorization')).toBeNull()
     })
 
+    it('strips payment and caller-supplied secret headers on cross-origin redirect', async () => {
+      mockFetch
+        .mockResolvedValueOnce(new Response(null, { status: 302, headers: { Location: 'http://other.example.com/api' } }))
+        .mockResolvedValueOnce(new Response('ok', { status: 200 }))
+
+      const resilientFetch = createResilientFetch(mockFetch, { retries: 0 })
+      await resilientFetch('http://example.com/old', {
+        headers: {
+          'X-Cashu': 'cashuBsecret',
+          'X-LNURLcash': 'https://mint.example/note?k1=secret',
+          'X-Api-Key': 'user-secret',
+          Cookie: 'session=secret',
+          Accept: 'application/json',
+        },
+      })
+
+      const headers = new Headers(mockFetch.mock.calls[1][1].headers)
+      expect(headers.get('X-Cashu')).toBeNull()
+      expect(headers.get('X-LNURLcash')).toBeNull()
+      expect(headers.get('X-Api-Key')).toBeNull()
+      expect(headers.get('Cookie')).toBeNull()
+      expect(headers.get('Accept')).toBe('application/json')
+    })
+
     it('preserves Authorization header on same-origin redirect', async () => {
       const redirectResponse = new Response(null, {
         status: 302,

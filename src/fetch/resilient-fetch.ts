@@ -2,6 +2,12 @@ import { validateUrl, type ResolvedAddress, type ValidateUrlOptions } from './ss
 import { usesProxy, type ProxyRoute } from './socks-proxy.js'
 import { SsrfError, TimeoutError, RetryExhaustedError, DowngradeError, ResponseTooLargeError, TransportUnavailableError } from './errors.js'
 
+/** Request headers that may follow a redirect to another origin. */
+const CROSS_ORIGIN_SAFE_HEADERS = new Set([
+  'accept', 'accept-language', 'content-language', 'content-type',
+  'user-agent', 'cache-control', 'pragma',
+])
+
 export interface ResilientFetchOptions {
   timeoutMs?: number
   retries?: number
@@ -285,13 +291,18 @@ async function fetchWithTimeoutAndRedirects(
     // SSRF check on redirect target; capture the resolved address for pinning
     currentResolved = await validateUrl(currentUrl, allowPrivate, ssrfOptions)
 
-    // Strip Authorization header on cross-origin redirects to prevent credential leakage.
-    // Per Fetch spec, credentials should not follow cross-origin redirects.
+    // On a cross-origin redirect keep only headers that carry no secret.
+    // Authorization is not the only one: X-Cashu and X-LNURLcash carry
+    // bearer money, and a caller may have supplied its own API key or cookie
+    // under any name. Per Fetch spec, credentials do not follow cross-origin
+    // redirects; neither does anything else we cannot vouch for.
     const redirectOrigin = new URL(currentUrl).origin
     const originalOrigin = new URL(originalUrl).origin
     if (redirectOrigin !== originalOrigin && currentInit.headers) {
-      const headers = new Headers(currentInit.headers)
-      headers.delete('Authorization')
+      const headers = new Headers()
+      for (const [name, value] of new Headers(currentInit.headers)) {
+        if (CROSS_ORIGIN_SAFE_HEADERS.has(name)) headers.set(name, value)
+      }
       currentInit = { ...currentInit, headers }
     }
 
