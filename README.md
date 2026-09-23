@@ -52,12 +52,12 @@ graph LR
 **Example session:**
 
 ```
-Agent: "I need routing data from routing.trotters.cc"
+Agent: "I need routing data from routing.example.com"
 
 1. l402-config()
    -> nwcConfigured: true, maxAutoPaySats: 1000
 
-2. l402-discover("https://routing.trotters.cc/api/route")
+2. l402-discover("https://routing.example.com/api/route")
    -> 10 sats/request, toll-booth detected, tiers available
 
 3. Agent reasons: "I need ~20 requests. The 500-sat tier
@@ -66,7 +66,7 @@ Agent: "I need routing data from routing.trotters.cc"
 4. l402-buy-credits(url, amountSats=500)
    -> Paid 500 sats, received 555 credits
 
-5. l402-fetch("https://routing.trotters.cc/api/route?from=...&to=...")
+5. l402-fetch("https://routing.example.com/api/route?from=...&to=...")
    -> 200 OK, route data, 545 credits remaining
 ```
 
