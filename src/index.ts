@@ -276,7 +276,7 @@ function buildServer(): McpServer {
     parseXCashu: parseXCashuChallenge,
     payXCashu: cashuTokenStore
       ? (challenge) => withCashuLock(() => attemptXCashuPayment({ challenge, tokenStore: cashuTokenStore }))
-      : async () => null,
+      : () => Promise.resolve(null),
     isIETFPayment: isIETFPaymentChallenge,
     parseIETFPayment: parseIETFPaymentChallenge,
     buildIETFCredential: buildIETFPaymentCredential,

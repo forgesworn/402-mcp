@@ -65,7 +65,7 @@ export function createNostrSubscriber(ssrfAllowPrivate = false): SearchDeps['sub
               {
                 onevent: (event) => {
                   if (events.length < MAX_EVENTS && verifyEvent(event)) {
-                    events.push(event as NostrEvent)
+                    events.push(event)
                   }
                 },
                 oneose: () => {
