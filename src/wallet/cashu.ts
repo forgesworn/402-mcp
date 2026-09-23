@@ -107,7 +107,7 @@ async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _optio
       // send() succeeded, so the melt request may have reached the mint
       // before the error. Only the keep proofs are certainly ours; the sent
       // ones are held aside until reconcile learns what the mint did.
-      console.warn('[402-mcp] Cashu melt failed after send() succeeded — melt outcome unknown, sent proofs reserved')
+      console.warn('[402-mcp] Cashu melt failed after send() succeeded; melt outcome unknown, sent proofs reserved')
       restoreChangeProofs(tokenStore, sendProofs.getEncodedTokenV4, token.mint, sendProofs.proofsToKeep, [])
       reserveProofs(tokenStore, sendProofs.getEncodedTokenV4, token.mint, sendProofs.proofsToSend, paymentHash, sendProofs.quoteId)
       return {
@@ -117,7 +117,7 @@ async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _optio
         reason: `The Cashu melt request failed after it may have reached the mint. ${UNKNOWN_REASON}`,
       }
     }
-    // Error occurred before send() — original token is still valid
+    // Error occurred before send(); original token is still valid
     tokenStore.add(token)
     return { paid: false, method: 'cashu', reason: 'Cashu payment failed' }
   }

@@ -432,7 +432,7 @@ export async function handleFetch(
               }
               return {
                 content: [{ type: 'text' as const, text: JSON.stringify({
-                  error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
+                  error: 'Payment was reported but the settlement preimage contains invalid characters; refusing to send it',
                   paymentState: 'unknown',
                   paymentHash: ietfChallenge.paymentHash,
                   message: RECONCILE_HINT,
@@ -618,7 +618,7 @@ export async function handleFetch(
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
-              error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
+              error: 'Payment was reported but the credential contains invalid characters; refusing to store it',
               paymentState: 'unknown',
               paymentHash: decoded.paymentHash,
               message: RECONCILE_HINT,

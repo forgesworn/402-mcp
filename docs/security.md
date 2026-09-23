@@ -60,9 +60,9 @@ These checks prevent header injection attacks, since preimages and macaroons are
 
 When running in HTTP mode (`TRANSPORT=http`), the server applies several layers of defence:
 
-- **Bearer token** — every `/mcp` request must carry `Authorization: Bearer <token>`, compared in constant time. The token is read from `HTTP_AUTH_TOKEN_FILE`, a private `0600` file, following the same rules as `NWC_URI_FILE`; a token in the environment is refused, and the server will not start in http mode without one.
-- **DNS rebinding protection** — the MCP SDK's host validation is on. Only a `Host` header naming a loopback address with the port (on a loopback bind), the bound address, or an entry in `HTTP_ALLOWED_HOSTS` is answered, so a web page that rebinds its own name to `127.0.0.1` cannot drive the server from the user's browser.
-- **Loopback-only binding** — the server binds to `127.0.0.1` by default. A warning is emitted if `BIND_ADDRESS` is changed to a non-loopback address, since the token would then cross the network; use a TLS reverse proxy.
+- **Bearer token**: every `/mcp` request must carry `Authorization: Bearer <token>`, compared in constant time. The token is read from `HTTP_AUTH_TOKEN_FILE`, a private `0600` file, following the same rules as `NWC_URI_FILE`; a token in the environment is refused, and the server will not start in http mode without one.
+- **DNS rebinding protection**: the MCP SDK's host validation is on. Only a `Host` header naming a loopback address with the port (on a loopback bind), the bound address, or an entry in `HTTP_ALLOWED_HOSTS` is answered, so a web page that rebinds its own name to `127.0.0.1` cannot drive the server from the user's browser.
+- **Loopback-only binding**: the server binds to `127.0.0.1` by default. A warning is emitted if `BIND_ADDRESS` is changed to a non-loopback address, since the token would then cross the network; use a TLS reverse proxy.
 - **Rate limiting** — a sliding-window rate limiter allows 100 requests per 60 seconds per IP address. The bucket map is capped at 10,000 entries and stale buckets are evicted every 60 seconds to prevent memory exhaustion from IP cycling.
 - **Security headers** — every response includes:
   - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`

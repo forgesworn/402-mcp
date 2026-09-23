@@ -4,7 +4,7 @@
 
 ## What is 402-mcp?
 
-402-mcp is an MCP (Model Context Protocol) server that gives AI agents economic agency — the ability to discover, pay for, and consume L402 and other Lightning or ecash payment-gated APIs without human registration, API keys, or middlemen.
+402-mcp is an MCP (Model Context Protocol) server that gives AI agents economic agency: the ability to discover, pay for, and consume L402 and other Lightning or ecash payment-gated APIs without human registration, API keys, or middlemen.
 
 It implements the client side of the L402 protocol: when an API responds with HTTP 402 (Payment Required), 402-mcp automatically parses the challenge, pays the Lightning invoice, stores the credential, and retries the request — all within a single tool call from the agent's perspective.
 
@@ -151,14 +151,14 @@ tests/                     # Mirrors src/ structure
 
 **Parameters:**
 - `url` (string, required) — the endpoint to fetch
-- `urls` (string[], optional) — all transport URLs from `l402-search`, tried in preference order
-- `pubkey` (string, optional) — service pubkey from `l402-search`, used to share a credential across the service's transports
+- `urls` (string[], optional): all transport URLs from `l402-search`, tried in preference order
+- `pubkey` (string, optional): service pubkey from `l402-search`, used to share a credential across the service's transports
 - `method` (string, optional) — HTTP method (default: GET)
 - `headers` (object, optional) — additional headers
 - `body` (string, optional) — request body
-- `autoPay` (boolean, optional, default false) — pay a challenge within the limits
-- `maxCostSats` (number, optional) — most this call may pay; lowers `MAX_AUTO_PAY_SATS`, never raises it
-- `txHash` (string, optional) — transaction hash for the experimental x402 format
+- `autoPay` (boolean, optional, default false): pay a challenge within the limits
+- `maxCostSats` (number, optional): most this call may pay; lowers `MAX_AUTO_PAY_SATS`, never raises it
+- `txHash` (string, optional): transaction hash for the experimental x402 format
 
 **Behaviour:**
 1. Uses a stored credential only if it is bound to every origin the request may reach
@@ -178,9 +178,9 @@ tests/                     # Mirrors src/ structure
 **Purpose:** Pay a challenge that `l402-fetch` or `l402-discover` returned.
 
 **Parameters:**
-- `paymentHash` (string) — payment hash of the cached challenge
-- `invoice`, `macaroon` (string, optional) — only for an invoice that did not come from a challenge; the human must approve it through MCP elicitation, or it is refused
-- `method` (string, optional) — `nwc`, `cashu`, `lnurlcash` or `human`
+- `paymentHash` (string): payment hash of the cached challenge
+- `invoice`, `macaroon` (string, optional): only for an invoice that did not come from a challenge; the human must approve it through MCP elicitation, or it is refused
+- `method` (string, optional): `nwc`, `cashu`, `lnurlcash` or `human`
 
 **Returns:**
 - `paid` (boolean) and `paymentState` (`paid`, `failed`, `unknown` or `blocked`)
@@ -196,9 +196,9 @@ For human wallets with a toll-booth payment page, polls for settlement for up to
 **Purpose:** Resolve payments whose outcome is unknown.
 
 **Parameters:**
-- `paymentHash` (string, optional) — omit to list unresolved payments
-- `preimage` (string, optional) — settles the payment if it hashes to `paymentHash`
-- `abandon` (boolean, optional) — stop tracking it; requires the human's approval through MCP elicitation
+- `paymentHash` (string, optional): omit to list unresolved payments
+- `preimage` (string, optional): settles the payment if it hashes to `paymentHash`
+- `abandon` (boolean, optional): stop tracking it; requires the human's approval through MCP elicitation
 
 **Behaviour:** Asks the wallet that made the payment (NWC `lookup_invoice`, the Cashu mint for a reserved melt, or the LNURLcash verify URL). Settled with a matching preimage clears it and stores the L402 credential; definitely failed clears it and releases reserved Cashu proofs. While any is unresolved for a service, auto-pay to it is paused.
 
@@ -278,7 +278,7 @@ Names, descriptions and capability text are wrapped in UNTRUSTED CONTENT markers
 **Parameters:**
 - `url` (string, required) — toll-booth server URL
 - `amountSats` (number, optional) — specific tier to purchase
-- `method` (string, optional) — `nwc`, `cashu` or `human`
+- `method` (string, optional): `nwc`, `cashu` or `human`
 
 **Behaviour:** Fetches available tiers, purchases the specified tier, stores the credential with the credit balance.
 
@@ -410,8 +410,8 @@ HTTP transport includes:
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http`. |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`). |
 | `BIND_ADDRESS` | `127.0.0.1` | HTTP bind address. Warning emitted for non-loopback addresses. |
-| `HTTP_AUTH_TOKEN_FILE` | — | Private 0600 file holding the bearer token (32+ characters). Required when `TRANSPORT=http`. Raw HTTP_AUTH_TOKEN is refused. |
-| `HTTP_ALLOWED_HOSTS` | — | Extra `Host` header values to accept (comma-separated), e.g. a reverse proxy's name. |
+| `HTTP_AUTH_TOKEN_FILE` | - | Private 0600 file holding the bearer token (32+ characters). Required when `TRANSPORT=http`. Raw HTTP_AUTH_TOKEN is refused. |
+| `HTTP_ALLOWED_HOSTS` | - | Extra `Host` header values to accept (comma-separated), e.g. a reverse proxy's name. |
 | `CORS_ORIGIN` | disabled | CORS origin for HTTP transport. |
 | `FETCH_TIMEOUT_MS` | 30000 | HTTP request timeout in milliseconds. |
 | `FETCH_MAX_RETRIES` | 2 | Maximum retry attempts for failed requests. Money-mutating POSTs use 0. |

@@ -85,7 +85,7 @@ export function selectTransports(
     return true
   })
 
-  // Sort by preference rank (stable — Array.prototype.sort is stable in Node 18+).
+  // Sort by preference rank (stable; Array.prototype.sort is stable in Node 18+).
   // Not in the preference list → Infinity, placed at the end.
   return filtered.slice().sort((a, b) => {
     const posA = rank(a, preference)
