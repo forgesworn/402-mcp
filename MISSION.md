@@ -13,6 +13,6 @@ We believe:
 - **Agents should be economic actors.** Not proxies for human credentials. Not dependents on pre-provisioned API keys. Autonomous participants in a marketplace.
 - **The human stays in control.** Safety caps, payment method selection, and credential visibility are human decisions. The agent operates within those boundaries, not around them.
 - **Protocol loyalty, not server loyalty.** 402-mcp works with any L402-compliant server — toll-booth, Aperture, or any future implementation.
-- **Three payment rails are better than one.** NWC for Lightning wallets, Cashu for ecash, human-in-the-loop as a fallback. The agent picks the best option for each situation.
-- **Privacy first.** Credentials stored locally and encrypted. No data sent to third parties. No accounts, no tracking, no analytics.
+- **Several payment rails are better than one.** NWC for Lightning wallets, Cashu for ecash, LNURLcash bearer notes, and human-in-the-loop as a fallback. The agent picks the best option for each situation.
+- **Privacy first.** Credentials stored locally and encrypted. No accounts, no tracking, no analytics, and no 402-mcp server. Discovery does reach public Nostr relays, and unresolvable host names go to a Handshake resolver; the README lists what goes where.
 - **The best agent infrastructure is invisible.** One `npx` command. No configuration required to start. Add a wallet URI when you're ready for autonomy.

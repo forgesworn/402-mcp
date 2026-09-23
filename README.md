@@ -91,7 +91,7 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services (comma-separated) |
 | `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses only (e.g. `socks5h://127.0.0.1:9050`) |
 | `SOCKS_PROXY` | - | SOCKS5 proxy for every paid-API request (e.g. Tor at `socks5h://127.0.0.1:9050`). Set this or `TOR_PROXY`, not both |
-| `HNS_GATEWAY_URL` | - | HTTP gateway for Handshake (`.hns`) domains (e.g. `https://hns.to`) |
+| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS resolver used for Handshake names. Any host name that ordinary DNS cannot find is looked up here |
 
 ### Transport selection and fallback
 
@@ -120,12 +120,23 @@ SOCKS5 support comes from undici's `Socks5ProxyAgent`, which Node marks experime
 |------|-------------|
 | `l402-config` | Introspect payment capabilities (wallets, limits, credential count) |
 | `l402-discover` | Probe an endpoint to discover pricing without paying |
-| `l402-fetch` | HTTP request with L402 support; auto-pays if within budget |
-| `l402-pay` | Pay a specific invoice (NWC, Cashu, or human-in-the-loop) |
+| `l402-fetch-preview` | Show what an endpoint costs without paying; drives the payment confirmation widget |
+| `l402-fetch` | HTTP request that pays a 402 challenge when `autoPay` is set and the price is within the limits |
+| `l402-pay` | Pay a challenge returned by `l402-fetch` or `l402-discover`, by its payment hash. Any other invoice needs the human's approval |
+| `l402-reconcile` | List or resolve payments whose outcome is unknown; auto-pay to that service is paused until they are resolved |
 | `l402-credentials` | List stored credentials and cached balances |
 | `l402-balance` | Check cached credit balance for a server |
 | `l402-search` | Discover L402 services on Nostr relays (kind 31402 announcements) |
 | `l402-store-token` | Store an L402 token obtained from a payment page |
+
+### Widgets (MCP Apps hosts)
+
+| Tool | Description |
+|------|-------------|
+| `l402-service-directory` | Interactive, searchable directory of services found by `l402-search` |
+| `l402-wallet-dashboard` | Interactive view of wallet status, limits and stored credentials |
+
+`l402-fetch-preview` also has a payment confirmation widget.
 
 ### toll-booth extensions
 
@@ -174,7 +185,13 @@ store. If no note covers it, the other rails are tried as usual.
 
 ## Privacy
 
-402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). No data is sent to any third party. No accounts, no tracking, no analytics. Payments use Lightning or Cashu — pseudonymous by design.
+402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). There are no accounts, no tracking and no analytics, and 402-mcp has no server of its own. It does talk to parties other than the APIs you call:
+
+- **Nostr relays.** `l402-search` subscribes to public relays (by default relay.damus.io, relay.primal.net and nos.lol) for service announcements, sending any topic or payment-method filter you give it. The query text itself is matched locally.
+- **A Handshake resolver.** When ordinary DNS cannot find a host name, it is looked up at `HNS_GATEWAY_URL` (`https://query.hdns.io/` by default), which therefore sees that name. This is off under `SOCKS_PROXY`.
+- **Your wallet's services.** NWC relays, Cashu mints and LNURLcash mints see the payments you make through them.
+
+Payments use Lightning or ecash, which are pseudonymous rather than anonymous.
 
 ## Ecosystem
 
@@ -194,7 +211,7 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 
 | | 402-mcp | Lightning Labs agent tools |
 |---|---|---|
-| **Payer methods** | NWC + Cashu + human fallback | Lightning only |
+| **Payer methods** | NWC + Cashu + LNURLcash + human fallback | Lightning only |
 | **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
 | **Server compatibility** | Any L402 server | Aperture-focused |
 | **Spend safety** | Per-payment cap, per-call max cost, rolling 60s and persisted 24h windows | Per-call max-cost |

@@ -95,7 +95,7 @@ claude mcp add 402-mcp -e NWC_URI_FILE="/absolute/path/to/402-mcp.nwc" -e MAX_AU
 }
 ```
 
-`MAX_AUTO_PAY_SATS` caps any single payment. Above this, the agent asks you first.
+`MAX_AUTO_PAY_SATS` caps any single payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that. Below the cap, a payment the agent makes with `autoPay` is not put to you first; set a budget on the NWC connection in your wallet as the hard limit.
 Raw `NWC_URI` values are refused so the bearer credential cannot leak through a
 process environment or MCP configuration.
 
@@ -119,7 +119,7 @@ The agent melts tokens to pay invoices — fully autonomous, no Lightning node n
 <details>
 <summary>No wallet — human-in-the-loop</summary>
 
-No setup needed. When the agent needs to pay, it presents a Lightning invoice with a QR code. Scan it with any Lightning wallet (Phoenix, Strike, Cash App, etc.) and the agent continues automatically once payment settles.
+No setup needed. When the agent needs to pay, it shows you a Lightning invoice as a QR code, or a payment page link for toll-booth servers. Pay it with any Lightning wallet (Phoenix, Strike, Cash App, etc.). The agent then calls `l402-pay` to confirm and carries on. That confirmation needs the server to report settlement, which toll-booth does through its payment page; other L402 servers do not, so without a wallet this flow works fully only with toll-booth.
 
 </details>
 

@@ -151,18 +151,23 @@ tests/                     # Mirrors src/ structure
 
 **Parameters:**
 - `url` (string, required) — the endpoint to fetch
+- `urls` (string[], optional) — all transport URLs from `l402-search`, tried in preference order
+- `pubkey` (string, optional) — service pubkey from `l402-search`, used to share a credential across the service's transports
 - `method` (string, optional) — HTTP method (default: GET)
 - `headers` (object, optional) — additional headers
 - `body` (string, optional) — request body
-- `paymentMethod` (string, optional) — force a specific payer method
+- `autoPay` (boolean, optional, default false) — pay a challenge within the limits
+- `maxCostSats` (number, optional) — most this call may pay; lowers `MAX_AUTO_PAY_SATS`, never raises it
+- `txHash` (string, optional) — transaction hash for the experimental x402 format
 
 **Behaviour:**
-1. Checks for existing credential for the origin
+1. Uses a stored credential only if it is bound to every origin the request may reach
 2. Makes the HTTP request (with credential if available)
-3. If 402 received: parses challenge, checks amount against `MAX_AUTO_PAY_SATS` and rolling spend cap
-4. If within budget: pays invoice, stores credential, retries request
-5. If over budget: returns the price and asks for human approval
-6. Returns response body, status, headers, and remaining credit balance
+3. If 402 received and `autoPay` is set: refuses if an earlier payment to the service is unresolved, then checks the price against `MAX_AUTO_PAY_SATS`, `maxCostSats` and the rolling spend caps
+4. If within the limits: pays, stores the credential bound to the request's origins, retries
+5. Otherwise: returns the price and `paymentHash` unpaid, and caches the challenge for `l402-pay`
+6. A payment whose outcome is unknown is reported as an error and recorded for `l402-reconcile`; it never falls through to another rail
+7. Returns response body (in UNTRUSTED CONTENT markers), status, headers, and remaining credit balance
 
 **When to use:** Primary tool for consuming L402 APIs. Handles the entire flow.
 
@@ -170,19 +175,44 @@ tests/                     # Mirrors src/ structure
 
 ### l402-pay
 
-**Purpose:** Pay a specific Lightning invoice.
+**Purpose:** Pay a challenge that `l402-fetch` or `l402-discover` returned.
 
 **Parameters:**
-- `invoice` (string, required) — BOLT11 invoice to pay
-- `paymentMethod` (string, optional) — force a specific payer method
-- `challengeId` (string, optional) — ID from a previous `l402-discover` to associate the payment
+- `paymentHash` (string) — payment hash of the cached challenge
+- `invoice`, `macaroon` (string, optional) — only for an invoice that did not come from a challenge; the human must approve it through MCP elicitation, or it is refused
+- `method` (string, optional) — `nwc`, `cashu`, `lnurlcash` or `human`
 
 **Returns:**
-- `paid` (boolean)
-- `preimage` (string) — payment proof
+- `paid` (boolean) and `paymentState` (`paid`, `failed`, `unknown` or `blocked`)
+- `credentialsStored` (boolean)
 - `method` (string) — which wallet paid
 
-**When to use:** When you have an invoice from a non-L402 source, or want explicit control.
+For human wallets with a toll-booth payment page, polls for settlement for up to 120 seconds.
+
+---
+
+### l402-reconcile
+
+**Purpose:** Resolve payments whose outcome is unknown.
+
+**Parameters:**
+- `paymentHash` (string, optional) — omit to list unresolved payments
+- `preimage` (string, optional) — settles the payment if it hashes to `paymentHash`
+- `abandon` (boolean, optional) — stop tracking it; requires the human's approval through MCP elicitation
+
+**Behaviour:** Asks the wallet that made the payment (NWC `lookup_invoice`, the Cashu mint for a reserved melt, or the LNURLcash verify URL). Settled with a matching preimage clears it and stores the L402 credential; definitely failed clears it and releases reserved Cashu proofs. While any is unresolved for a service, auto-pay to it is paused.
+
+---
+
+### l402-fetch-preview
+
+**Purpose:** Show what an endpoint costs without paying. Its dependencies include no wallet or spend tracker, so it cannot spend. Widget hosts render the result as a payment confirmation dialog.
+
+---
+
+### Widget tools
+
+`l402-service-directory` (searchable service directory) and `l402-wallet-dashboard` (wallet status, limits, credentials) are MCP Apps widgets for hosts that support them.
 
 ---
 
@@ -235,6 +265,8 @@ tests/                     # Mirrors src/ structure
 - `topics` — topic tags
 - `capabilities` — array of `{ name, description }`
 
+Names, descriptions and capability text are wrapped in UNTRUSTED CONTENT markers. Topic and payment-method filters are sent to the relays; the query text is matched locally.
+
 **When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements. Services may advertise multiple transport URLs (clearnet, .onion, Handshake); pass the `urls` array and `pubkey` to `l402-fetch` for automatic transport selection and fallback.
 
 ---
@@ -246,7 +278,7 @@ tests/                     # Mirrors src/ structure
 **Parameters:**
 - `url` (string, required) — toll-booth server URL
 - `amountSats` (number, optional) — specific tier to purchase
-- `paymentMethod` (string, optional) — force a specific payer method
+- `method` (string, optional) — `nwc`, `cashu` or `human`
 
 **Behaviour:** Fetches available tiers, purchases the specified tier, stores the credential with the credit balance.
 
@@ -305,20 +337,17 @@ Wallets are tried in order: NWC → Cashu → LNURLcash → Human. The first wal
 | LNURLcash | Fully autonomous | `LNURLCASH_NOTES` file with LUD-25 bearer notes | ~2-6 seconds |
 | Human | Requires human | None — always available as fallback | Minutes |
 
-The agent can force a specific method per-call using the `paymentMethod` parameter.
+The agent can force a specific method on `l402-pay` and `l402-buy-credits` with the `method` parameter.
 
 ## Safety and Spend Limits
 
 ### Per-payment cap
 
-`MAX_AUTO_PAY_SATS` (default: 1000) caps any single payment. If an invoice exceeds this:
-- The agent is told the price and asked to seek human approval
-- The human wallet (QR code) is used for the actual payment
-- The credential is stored normally after payment
+`MAX_AUTO_PAY_SATS` (default: 1000) caps any single payment. A dearer challenge is not paid from any configured wallet, and the human wallet does not take over: the price and invoice go back to the agent, and whether it asks the human is up to the agent. `maxCostSats` on `l402-fetch` lowers the cap for one call. `0` disables auto-pay.
 
 ### Rolling spend cap
 
-`MAX_SPEND_PER_MINUTE_SATS` (default: 10000) caps total spend in any 60-second window. This prevents:
+`MAX_SPEND_PER_MINUTE_SATS` (default: 10000) caps total spend in any 60-second window, and `MAX_SPEND_PER_DAY_SATS` (default: 5000) in any 24 hours; the daily window is kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` in either blocks auto-pay. The budget set on the NWC connection is the real hard limit. These prevent:
 - Rapid successive small payments exceeding a total budget
 - Runaway loops where the agent keeps buying credits
 - Both caps use atomic `tryRecord()` to prevent TOCTOU race conditions
@@ -333,7 +362,7 @@ All outbound HTTP requests pass through an SSRF guard:
 ### Credential Security
 
 - Credentials encrypted with AES-256-GCM
-- Encryption key stored in OS keychain (macOS Keychain, Windows Credential Vault, Linux Secret Service) when available
+- Encryption key stored in the OS keychain when available (macOS through the `security` command-line tool; elsewhere through the optional `keytar` module)
 - Falls back to file-based key at `~/.402-mcp/encryption.key` with a console warning
 - NWC capability and response events authenticated with NIP-44 v2 and signatures
 - Returned NWC preimages verified against the challenged BOLT11 payment hash
@@ -375,7 +404,8 @@ HTTP transport includes:
 | `NWC_URI_FILE` | — | Path to a private 0600 file containing the NWC bearer URI. Raw NWC_URI is refused. |
 | `CASHU_TOKENS` | — | Path to Cashu token store file. Must be within home directory. |
 | `MAX_AUTO_PAY_SATS` | 1000 | Per-payment safety cap (satoshis). 0 disables autonomous payments. |
-| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Rolling 60-second spend cap (satoshis). |
+| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Rolling 60-second spend cap (satoshis). 0 blocks auto-pay. |
+| `MAX_SPEND_PER_DAY_SATS` | 5000 | Rolling 24-hour spend cap (satoshis), persisted across restarts. 0 blocks auto-pay. |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Path to encrypted credential store. Must be within home directory. |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http`. |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`). |
@@ -393,7 +423,7 @@ HTTP transport includes:
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services. |
 | `TOR_PROXY` | — | SOCKS5 proxy for .onion requests only (e.g. `socks5h://127.0.0.1:9050`). |
 | `SOCKS_PROXY` | — | SOCKS5 proxy for every paid-API request, names resolved by the proxy. Set this or `TOR_PROXY`, not both. Wallet and relay traffic is not proxied. |
-| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake (HNS) name resolution. |
+| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS resolver for Handshake (HNS) names. Any host name ordinary DNS cannot find is sent here. |
 
 ## Multi-Transport Endpoints
 
@@ -421,7 +451,7 @@ Handshake names are resolved via DNS-over-HTTPS (RFC 8484 wire format) through t
 
 ### Credential Portability
 
-Credentials are keyed by service **pubkey** (from the kind 31402 event), not by URL origin. A macaroon obtained via a Tor hidden service works over clearnet, and vice versa. This is essential for transport fallback — the agent doesn't need to re-authenticate when switching transports.
+Credentials are keyed by service **pubkey** (from the kind 31402 event) and bound to the transport origins they were bought through. A macaroon obtained via a Tor hidden service works over the service's clearnet URL, and vice versa, when both were in the `urls` list at purchase. A credential is never sent to an origin it is not bound to, whatever pubkey the request names.
 
 ## Ecosystem
 
@@ -473,7 +503,10 @@ Credentials are keyed by service **pubkey** (from the kind 31402 event), not by 
 ### Agent with no wallet (human-in-the-loop)
 
 ```
-1. l402-fetch(url)                  → 402 received, amount shown
-2. Agent presents QR code to user   → Human pays via wallet app
-3. Poll detects payment             → Credential stored, data returned
+1. l402-fetch(url, autoPay)        → 402 received; payment page URL or QR shown
+2. Human pays via wallet app
+3. l402-pay(paymentHash)            → polls the toll-booth payment page, stores the credential
+4. l402-fetch(url)                  → data returned
+
+Settlement can only be confirmed where the server reports it (toll-booth).
 ```

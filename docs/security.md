@@ -6,7 +6,7 @@
 
 Two complementary caps prevent runaway autonomous spending:
 
-- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. Above this threshold the agent must ask for human approval.
+- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that.
 - **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
 
 Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls — concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
@@ -41,7 +41,7 @@ Stored credentials (macaroons, preimages, payment hashes) are encrypted at rest 
 
 The 256-bit encryption key is sourced in priority order:
 
-1. **OS keychain** (via `keytar`) — the key is stored in the system credential manager (macOS Keychain, GNOME Keyring, Windows Credential Vault). This keeps the key out of the filesystem entirely.
+1. **OS keychain.** On macOS the key is kept in the login Keychain through the built-in `security` command-line tool, and goes in on stdin, never as an argument. On other platforms the optional `keytar` module is tried (GNOME Keyring, Windows Credential Vault); it is archived upstream and often fails to load on current Node, in which case the file fallback is used. If `~/.402-mcp/encryption.key` already exists on macOS it takes precedence and is copied into the Keychain, so data encrypted under it stays readable.
 2. **File-based fallback** — if the OS keychain is unavailable, a random key is generated and written to `~/.402-mcp/encryption.key` with `0o600` permissions (owner read/write only). A warning is emitted at startup: the credentials are encrypted but the key is accessible to anyone with file access.
 
 The credential store directory is created with `0o700` permissions. Writes use an atomic rename pattern (write to `.tmp`, then `renameSync`) to prevent data loss on crash. Legacy plaintext credential files are automatically migrated to encrypted format on first load.

@@ -54,7 +54,7 @@ All data is stored locally on the user's machine. 402-mcp has no server-side com
 - **No personal data collection.** 402-mcp does not process personal data beyond what the user stores locally on their own machine.
 - **No server-side storage.** There is no backend, no database, no cloud component.
 - **GDPR.** Data subject requests (access, erasure, portability) are not applicable in the traditional sense — the user has direct filesystem access to all data 402-mcp creates. Deleting `~/.402-mcp/` removes everything.
-- **No data sent to third parties.** The only outbound network traffic is to the L402/x402 API endpoints the user explicitly asks the agent to call, and to the user's own wallet (via NWC relay or Cashu mint).
+- **Limited third-party traffic.** Beyond the APIs the agent is asked to call and the user's own wallet services (NWC relays, Cashu and LNURLcash mints), 402-mcp contacts public Nostr relays when `l402-search` runs (sending any topic or payment-method filter; the query text is matched locally), and sends any host name that ordinary DNS cannot resolve to the Handshake resolver at `HNS_GATEWAY_URL` (`https://query.hdns.io/` by default). There are no analytics and no 402-mcp server.
 
 See [`docs/security.md`](docs/security.md) for full details on encryption implementation, SSRF protection, and input validation.
 
@@ -76,7 +76,7 @@ Cashu mints issue bearer ecash tokens that may be classified as **Electronic Mon
 
 | Cap | Default | Purpose |
 |-----|---------|---------|
-| `MAX_AUTO_PAY_SATS` | 1000 sats | Per-request ceiling — payments above this require human approval |
+| `MAX_AUTO_PAY_SATS` | 1000 sats | Per-request ceiling. Dearer challenges are not paid from a configured wallet; they go back to the agent |
 | `MAX_SPEND_PER_MINUTE_SATS` | 10000 sats | Rolling 60-second window — prevents rapid successive payments from exceeding a total budget |
 
 Both caps are enforced atomically via `SpendTracker.tryRecord()` to prevent TOCTOU race conditions. Definitely rejected payments release their reservation. A timeout, abort, publication failure, malformed response, or invalid settlement proof retains it and returns an unknown payment state that must be reconciled before retrying.
