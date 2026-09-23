@@ -7,8 +7,10 @@ startCommand:
       env: {
         ...(config.nwcUriFile ? { NWC_URI_FILE: config.nwcUriFile } : {}),
         ...(config.cashuTokens ? { CASHU_TOKENS: config.cashuTokens } : {}),
+        ...(config.lnurlcashNotes ? { LNURLCASH_NOTES: config.lnurlcashNotes } : {}),
         ...(config.maxAutoPaySats != null ? { MAX_AUTO_PAY_SATS: String(config.maxAutoPaySats) } : {}),
-        ...(config.maxSpendPerMinuteSats != null ? { MAX_SPEND_PER_MINUTE_SATS: String(config.maxSpendPerMinuteSats) } : {})
+        ...(config.maxSpendPerMinuteSats != null ? { MAX_SPEND_PER_MINUTE_SATS: String(config.maxSpendPerMinuteSats) } : {}),
+        ...(config.maxSpendPerDaySats != null ? { MAX_SPEND_PER_DAY_SATS: String(config.maxSpendPerDaySats) } : {})
       }
     })
 
@@ -26,25 +28,42 @@ configSchema:
       type: string
       title: Cashu token file path
       description: >
-        Absolute path to a Cashu ecash token store file. Optional — omit if
-        using NWC or human-in-the-loop payments.
+        Absolute path to a Cashu ecash token store file, within the home
+        directory. Optional: omit if using NWC or human-in-the-loop payments.
+    lnurlcashNotes:
+      type: string
+      title: LNURLcash note file path
+      description: >
+        Absolute path to an LNURLcash (LUD-25) bearer note store file, within
+        the home directory. Optional.
     maxAutoPaySats:
       type: integer
       title: Max auto-pay (sats)
       description: >
-        Safety cap for a single autonomous payment in satoshis. Payments above
-        this threshold require human approval. Default: 1000.
+        Most a single automatic payment may cost, in satoshis. A dearer
+        challenge is not paid and goes back to the agent. 0 disables
+        auto-pay. Default: 1000.
       default: 1000
       minimum: 0
     maxSpendPerMinuteSats:
       type: integer
       title: Max spend per minute (sats)
       description: >
-        Rolling 60-second spend cap across all payments in satoshis. Prevents
-        runaway spending from rapid successive payments. Default: 10000.
+        Automatic spend allowed in any rolling 60 seconds, in satoshis.
+        0 blocks all auto-pay. Default: 10000.
       default: 10000
+      minimum: 0
+    maxSpendPerDaySats:
+      type: integer
+      title: Max spend per day (sats)
+      description: >
+        Automatic spend allowed in any rolling 24 hours, in satoshis, kept
+        across restarts. 0 blocks all auto-pay. The budget set on the NWC
+        connection itself is the real hard limit. Default: 5000.
+      default: 5000
       minimum: 0
 
 exampleConfig:
   maxAutoPaySats: 1000
   maxSpendPerMinuteSats: 10000
+  maxSpendPerDaySats: 5000
