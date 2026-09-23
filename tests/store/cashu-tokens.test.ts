@@ -102,4 +102,31 @@ describe('CashuTokenStore', () => {
     const raw = JSON.parse(readFileSync(filePath, 'utf8'))
     expect(isEncrypted(raw)).toBe(true)
   })
+
+  describe('reserved proofs from an unresolved melt', () => {
+    const reserved = { ...token, token: 'cashuBreserved', amountSats: 128, paymentHash: 'ab'.repeat(32), quoteId: 'q1', reservedAt: '2026-03-11T09:00:00Z' }
+
+    it('are neither spendable nor counted, and survive a reload', async () => {
+      store.reserve(reserved)
+      expect(store.totalBalance()).toBe(0)
+      expect(store.consumeFirst()).toBeUndefined()
+      const reloaded = new CashuTokenStore(filePath)
+      await reloaded.init()
+      expect(reloaded.getReserved(reserved.paymentHash)).toMatchObject({ quoteId: 'q1', amountSats: 128 })
+    })
+
+    it('return to the spendable pool when released', () => {
+      store.reserve(reserved)
+      expect(store.releaseReserved(reserved.paymentHash)).toBe(true)
+      expect(store.totalBalance()).toBe(128)
+      expect(store.listReserved()).toHaveLength(0)
+    })
+
+    it('are forgotten when dropped', () => {
+      store.reserve(reserved)
+      expect(store.dropReserved(reserved.paymentHash)).toBe(true)
+      expect(store.totalBalance()).toBe(0)
+      expect(store.listReserved()).toHaveLength(0)
+    })
+  })
 })

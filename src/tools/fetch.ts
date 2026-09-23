@@ -71,6 +71,48 @@ function parseBalance(value: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
+type PayOutcome = { paid: boolean; preimage?: string; method: string; outcome?: 'unknown'; reason?: string }
+
+/** A payment that may have executed. Always an error, so the agent does not pay again. */
+function paymentUnknown(result: PayOutcome, costSats: number | null, paymentHash: string | null | undefined, protocol: string) {
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        status: 402,
+        protocol,
+        paymentState: 'unknown',
+        costSats,
+        paymentHash,
+        method: result.method,
+        message: result.outcome === 'unknown'
+          ? (result.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.')
+          : 'The wallet reported payment without a settlement preimage. Reconcile this invoice before retrying.',
+      }, null, 2),
+    }],
+    isError: true as const,
+  }
+}
+
+/** A payment that definitely did not execute. */
+function paymentFailed(result: PayOutcome, costSats: number | null, paymentHash: string | null | undefined, protocol: string) {
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        status: 402,
+        protocol,
+        paymentState: 'failed',
+        costSats,
+        paymentHash,
+        method: result.method,
+        message: `Payment failed and no money moved${result.reason ? `: ${result.reason}` : '.'}`,
+      }, null, 2),
+    }],
+    isError: true as const,
+  }
+}
+
 /** Makes an HTTP request with automatic L402/x402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
   args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string },
@@ -297,60 +339,48 @@ export async function handleFetch(
           const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)
           if (ietfWithinLimit) {
             const ietfPayResult = await deps.payInvoice(ietfChallenge.invoice, { serverOrigin: origin })
+            // A payment attempt ends here whatever happens: falling through to
+            // the L402 rail after this would pay a second invoice.
             if (!ietfPayResult.paid && ietfPayResult.outcome !== 'unknown') {
               deps.spendTracker.unrecord(ietfChallenge.amountSats)
+              return paymentFailed(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
             }
-            if (ietfPayResult.outcome === 'unknown') {
+            if (ietfPayResult.outcome === 'unknown' || !ietfPayResult.preimage) {
+              return paymentUnknown(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
+            }
+            if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    status: 402,
-                    protocol: 'ietf-payment',
-                    paymentState: 'unknown',
-                    costSats: ietfChallenge.amountSats,
-                    paymentHash: ietfChallenge.paymentHash,
-                    message: ietfPayResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
-                  }, null, 2),
-                }],
+                content: [{ type: 'text' as const, text: JSON.stringify({
+                  error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
+                  paymentState: 'unknown',
+                  paymentHash: ietfChallenge.paymentHash,
+                  message: 'Reconcile the original invoice before retrying.',
+                }) }],
                 isError: true as const,
               }
             }
-            if (ietfPayResult.paid && ietfPayResult.preimage) {
-              if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
-                return {
-                  content: [{ type: 'text' as const, text: JSON.stringify({
-                    error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
-                    paymentState: 'unknown',
-                    paymentHash: ietfChallenge.paymentHash,
-                    message: 'Reconcile the original invoice before retrying.',
-                  }) }],
-                  isError: true as const,
-                }
-              }
-              const credential = deps.buildIETFCredential(ietfChallenge, ietfPayResult.preimage)
-              const retryHeaders: Record<string, string> = { ...reqHeaders }
-              retryHeaders['Authorization'] = `Payment ${credential}`
+            const credential = deps.buildIETFCredential(ietfChallenge, ietfPayResult.preimage)
+            const retryHeaders: Record<string, string> = { ...reqHeaders }
+            retryHeaders['Authorization'] = `Payment ${credential}`
 
-              const retryResponse = await doFetch(primaryUrl, {
-                method: args.method ?? 'GET',
-                headers: retryHeaders,
-                body: args.body,
-              })
+            const retryResponse = await doFetch(primaryUrl, {
+              method: args.method ?? 'GET',
+              headers: retryHeaders,
+              body: args.body,
+            })
 
-              const retryBody = await retryResponse.text()
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    status: retryResponse.status,
-                    headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
-                    satsPaid: ietfChallenge.amountSats,
-                    paymentMethod: 'ietf-payment',
-                  }, null, 2),
-                }],
-              }
+            const retryBody = await retryResponse.text()
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  status: retryResponse.status,
+                  headers: filterResponseHeaders(retryResponse.headers),
+                  body: retryBody,
+                  satsPaid: ietfChallenge.amountSats,
+                  paymentMethod: 'ietf-payment',
+                }, null, 2),
+              }],
             }
           }
         }
@@ -482,84 +512,73 @@ export async function handleFetch(
 
       const payResult = await deps.payInvoice(challenge.invoice, { serverOrigin: origin })
 
-      // Roll back spend-limit reservation if payment failed
+      // Roll back the spend-limit reservation only for a definite failure,
+      // and report it as one rather than as a fresh challenge to pay.
       if (!payResult.paid && payResult.outcome !== 'unknown') {
         deps.spendTracker.unrecord(decoded.costSats!)
+        return paymentFailed(payResult, decoded.costSats, decoded.paymentHash, 'l402')
       }
 
-      if (payResult.outcome === 'unknown') {
+      // Unknown, or reported paid with no preimage: the money may have moved.
+      if (payResult.outcome === 'unknown' || !payResult.preimage) {
+        return paymentUnknown(payResult, decoded.costSats, decoded.paymentHash, 'l402')
+      }
+
+      // Validate preimage (hex) and macaroon (base64-safe) before storage
+      // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
+      if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
         return {
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
-              status: 402,
+              error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
               paymentState: 'unknown',
-              costSats: decoded.costSats,
               paymentHash: decoded.paymentHash,
-              message: payResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
-            }, null, 2),
+              message: 'Reconcile the original invoice before retrying.',
+            }),
           }],
           isError: true as const,
         }
       }
 
-      if (payResult.paid && payResult.preimage) {
-        // Validate preimage (hex) and macaroon (base64-safe) before storage
-        // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
-        if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
-                paymentState: 'unknown',
-                paymentHash: decoded.paymentHash,
-                message: 'Reconcile the original invoice before retrying.',
-              }),
-            }],
-            isError: true as const,
-          }
-        }
+      // Store credential and retry
+      deps.credentialStore.set(credKey, {
+        macaroon: challenge.macaroon,
+        preimage: payResult.preimage,
+        paymentHash: decoded.paymentHash ?? '',
+        creditBalance: null,
+        storedAt: new Date().toISOString(),
+        lastUsed: new Date().toISOString(),
+        server: serverInfo.type === 'toll-booth' ? 'toll-booth' : null,
+      })
 
-        // Store credential and retry
-        deps.credentialStore.set(credKey, {
-          macaroon: challenge.macaroon,
-          preimage: payResult.preimage,
-          paymentHash: decoded.paymentHash ?? '',
-          creditBalance: null,
-          storedAt: new Date().toISOString(),
-          lastUsed: new Date().toISOString(),
-          server: serverInfo.type === 'toll-booth' ? 'toll-booth' : null,
-        })
+      // Retry the request with new credentials (reuse filtered headers)
+      const retryHeaders: Record<string, string> = { ...reqHeaders }
+      retryHeaders['Authorization'] = `L402 ${challenge.macaroon}:${payResult.preimage}`
 
-        // Retry the request with new credentials (reuse filtered headers)
-        const retryHeaders: Record<string, string> = { ...reqHeaders }
-        retryHeaders['Authorization'] = `L402 ${challenge.macaroon}:${payResult.preimage}`
+      const retryResponse = await doFetch(primaryUrl, {
+        method: args.method ?? 'GET',
+        headers: retryHeaders,
+        body: args.body,
+      })
 
-        const retryResponse = await doFetch(primaryUrl, {
-          method: args.method ?? 'GET',
-          headers: retryHeaders,
-          body: args.body,
-        })
+      const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
+      if (retryBalance !== null) {
+        deps.credentialStore.updateBalance(credKey, retryBalance)
+      }
 
-        const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
-        if (retryBalance !== null) {
-          deps.credentialStore.updateBalance(credKey, retryBalance)
-        }
-
-        const retryBody = await retryResponse.text()
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({
-              status: retryResponse.status,
-              headers: filterResponseHeaders(retryResponse.headers),
-              body: retryBody,
-              creditsRemaining: retryBalance,
-              satsPaid: decoded.costSats,
-            }, null, 2),
-          }],
-        }
+      const retryBody = await retryResponse.text()
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            status: retryResponse.status,
+            headers: filterResponseHeaders(retryResponse.headers),
+            body: retryBody,
+            creditsRemaining: retryBalance,
+            satsPaid: decoded.costSats,
+          }, null, 2),
+        }],
       }
     }
 

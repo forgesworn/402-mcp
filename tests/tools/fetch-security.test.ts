@@ -206,6 +206,68 @@ describe('handleFetch security', () => {
     expect(deps.parseL402).not.toHaveBeenCalled()
   })
 
+  describe('a payment attempt never ends in a fresh challenge or a second rail', () => {
+    const ietfChallenge = {
+      id: 'id1', realm: 'api.example.com', method: 'lightning', intent: 'charge',
+      request: 'request', invoice: 'lnbc50n1ietf', paymentHash: 'hash1', amountSats: 50,
+    }
+
+    function l402Deps(payResult: Record<string, unknown>, tracker: SpendTracker) {
+      return makeDeps({
+        fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+          'www-authenticate': 'L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+        }, '{}')) as unknown as typeof fetch,
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue(payResult),
+        spendTracker: tracker,
+      })
+    }
+
+    it('treats an L402 payment reported paid without a preimage as unknown', async () => {
+      const tracker = new SpendTracker()
+      const deps = l402Deps({ paid: true, method: 'cashu' }, tracker)
+      const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(result.isError).toBe(true)
+      expect(parsed.paymentState).toBe('unknown')
+      expect(parsed.message).not.toMatch(/^Payment of/)
+      expect(tracker.recentSpend()).toBe(50)
+      expect(deps.payInvoice).toHaveBeenCalledTimes(1)
+    })
+
+    it('reports a definite L402 failure as an error, not a challenge to pay again', async () => {
+      const tracker = new SpendTracker()
+      const deps = l402Deps({ paid: false, method: 'nwc', reason: 'no route' }, tracker)
+      const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+      const parsed = JSON.parse(result.content[0].text)
+      expect(result.isError).toBe(true)
+      expect(parsed.paymentState).toBe('failed')
+      expect(tracker.recentSpend()).toBe(0)
+    })
+
+    it.each([
+      ['reported paid without a preimage', { paid: true, method: 'cashu' }, 'unknown'],
+      ['definitely failed', { paid: false, method: 'nwc', reason: 'no route' }, 'failed'],
+    ])('does not pay the L402 invoice after an IETF payment %s', async (_label, payResult, state) => {
+      const deps = makeDeps({
+        fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+          'www-authenticate': 'Payment id="id1", L402 macaroon="bWFjMQ==", invoice="lnbc50n1test"',
+        }, '{}')) as unknown as typeof fetch,
+        isIETFPayment: vi.fn().mockReturnValue(true),
+        parseIETFPayment: vi.fn().mockReturnValue({ ...ietfChallenge }),
+        parseL402: vi.fn().mockReturnValue({ macaroon: 'bWFjMQ==', invoice: 'lnbc50n1test' }),
+        decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+        payInvoice: vi.fn().mockResolvedValue(payResult),
+      })
+      const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
+      expect(result.isError).toBe(true)
+      expect(JSON.parse(result.content[0].text).paymentState).toBe(state)
+      expect(deps.payInvoice).toHaveBeenCalledTimes(1)
+      expect(deps.parseL402).not.toHaveBeenCalled()
+    })
+  })
+
   it('strips dangerous hop-by-hop headers from user input', async () => {
     const fetchMock = vi.fn().mockResolvedValue(mockResponse(200))
     const deps = makeDeps({

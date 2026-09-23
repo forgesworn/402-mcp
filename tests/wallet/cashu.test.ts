@@ -2,12 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { createCashuWallet } from '../../src/wallet/cashu.js'
 import type { CashuTokenStore, StoredToken } from '../../src/store/cashu-tokens.js'
 
+// A real 1-sat invoice whose payment hash is sha256 of PREIMAGE.
+const INVOICE = 'lnbc10n1pj48ugqpp5urnh55r5z2cjpahduc0ky22mrfajluva8hxg7ujnu5txx3cv3z8qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqgp0xzz'
+const PREIMAGE = 'aa'.repeat(32)
+const PAYMENT_HASH = 'e0e77a507412b120f6ede61f62295b1a7b2ff19d3dcc8f7253e51663470c888e'
+
 function mockTokenStore(tokens: StoredToken[] = []): CashuTokenStore {
   const data = [...tokens]
   return {
     list: () => [...data],
     totalBalance: () => data.reduce((sum, t) => sum + t.amountSats, 0),
     add: vi.fn((t: StoredToken) => data.push(t)),
+    reserve: vi.fn(),
     consumeFirst: vi.fn(() => data.shift()),
     remove: vi.fn((tokenStr: string) => {
       const idx = data.findIndex(t => t.token === tokenStr)
@@ -60,7 +66,7 @@ describe('createCashuWallet', () => {
   it('returns error when no tokens available', async () => {
     const store = mockTokenStore([])
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
     expect(result.paid).toBe(false)
     expect(result.reason).toContain('No Cashu tokens')
   })
@@ -71,6 +77,7 @@ describe('createCashuWallet', () => {
     ])
 
     mockWalletInstance.createMeltQuote.mockResolvedValue({
+      quote: 'q1',
       amount: 100,
       fee_reserve: 10,
     })
@@ -79,15 +86,15 @@ describe('createCashuWallet', () => {
       keep: [{ amount: 256, id: 'abc', secret: 's3', C: 'c3' }],
     })
     mockWalletInstance.meltProofs.mockResolvedValue({
-      quote: { state: 'PAID', payment_preimage: 'deadbeef' },
+      quote: { state: 'PAID', payment_preimage: PREIMAGE },
       change: [{ amount: 18, id: 'abc', secret: 's4', C: 'c4' }],
     })
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(true)
-    expect(result.preimage).toBe('deadbeef')
+    expect(result.preimage).toBe(PREIMAGE)
 
     // Verify change proofs were re-added: keep (256) + change (18) = 274
     expect(store.add).toHaveBeenCalledTimes(1)
@@ -114,12 +121,12 @@ describe('createCashuWallet', () => {
       keep: [],
     })
     mockWalletInstance.meltProofs.mockResolvedValue({
-      quote: { state: 'PAID', payment_preimage: 'aabbccdd' },
+      quote: { state: 'PAID', payment_preimage: PREIMAGE },
       change: [],
     })
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(true)
     // add() should not be called since there are no leftover proofs
@@ -132,6 +139,7 @@ describe('createCashuWallet', () => {
     ])
 
     mockWalletInstance.createMeltQuote.mockResolvedValue({
+      quote: 'q1',
       amount: 100,
       fee_reserve: 10,
     })
@@ -140,7 +148,7 @@ describe('createCashuWallet', () => {
       keep: [{ amount: 256, id: 'abc', secret: 's3', C: 'c3' }],
     })
     mockWalletInstance.meltProofs.mockResolvedValue({
-      quote: { state: 'PAID', payment_preimage: 'cafebabe' },
+      quote: { state: 'PAID', payment_preimage: PREIMAGE },
       change: [{ amount: 18, id: 'abc', secret: 's4', C: 'c4' }],
     })
 
@@ -151,11 +159,11 @@ describe('createCashuWallet', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     // Payment still succeeds
     expect(result.paid).toBe(true)
-    expect(result.preimage).toBe('cafebabe')
+    expect(result.preimage).toBe(PREIMAGE)
 
     // Warning was logged
     expect(warnSpy).toHaveBeenCalledWith(
@@ -177,7 +185,7 @@ describe('createCashuWallet', () => {
       keep: [],
     })
     mockWalletInstance.meltProofs.mockResolvedValue({
-      quote: { state: 'PAID', payment_preimage: 'deadbeef' },
+      quote: { state: 'PAID', payment_preimage: PREIMAGE },
       change: [],
     })
 
@@ -185,8 +193,8 @@ describe('createCashuWallet', () => {
 
     // Fire two payments concurrently — they should serialise, not race
     const [r1, r2] = await Promise.all([
-      wallet.payInvoice('lnbc100n1first'),
-      wallet.payInvoice('lnbc100n1second'),
+      wallet.payInvoice(INVOICE),
+      wallet.payInvoice(INVOICE),
     ])
 
     expect(r1.paid).toBe(true)
@@ -204,7 +212,7 @@ describe('createCashuWallet', () => {
     mockWalletInstance.createMeltQuote.mockRejectedValue(new Error('Connection to internal-mint.local:3338 refused'))
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(false)
     // Error message should be generic, not leak internal details
@@ -223,6 +231,7 @@ describe('createCashuWallet', () => {
     ])
 
     mockWalletInstance.createMeltQuote.mockResolvedValue({
+      quote: 'q1',
       amount: 100,
       fee_reserve: 10,
     })
@@ -236,7 +245,7 @@ describe('createCashuWallet', () => {
     })
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(false)
     expect(result.reason).toContain('melt failed')
@@ -260,7 +269,7 @@ describe('createCashuWallet', () => {
     mockWalletInstance.createMeltQuote.mockRejectedValue(new Error('mint unreachable'))
 
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(false)
     expect(result.reason).toBe('Cashu payment failed')
@@ -270,12 +279,13 @@ describe('createCashuWallet', () => {
     )
   })
 
-  it('restores swapped proofs when error occurs after send', async () => {
+  it('reserves sent proofs and reports unknown when melt throws after send', async () => {
     const store = mockTokenStore([
       { token: 'cashuApost', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
     ])
 
     mockWalletInstance.createMeltQuote.mockResolvedValue({
+      quote: 'q1',
       amount: 100,
       fee_reserve: 10,
     })
@@ -283,26 +293,77 @@ describe('createCashuWallet', () => {
       send: [{ amount: 128, id: 'abc', secret: 's2', C: 'c2' }],
       keep: [{ amount: 256, id: 'abc', secret: 's3', C: 'c3' }],
     })
-    // meltProofs throws after send() has already swapped the original proofs
+    // meltProofs throws after send(): the melt may have reached the mint
     mockWalletInstance.meltProofs.mockRejectedValue(new Error('network timeout'))
 
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const wallet = createCashuWallet(store)
-    const result = await wallet.payInvoice('lnbc100n1test')
+    const result = await wallet.payInvoice(INVOICE)
 
     expect(result.paid).toBe(false)
-    expect(result.reason).toBe('Cashu payment failed')
-    // Should restore swapped proofs (keep 256 + send 128 = 384), NOT original
+    expect(result.outcome).toBe('unknown')
+    expect(result.reason).toContain('l402-reconcile')
+    // Keep proofs (256) are certainly ours; the sent 128 are held aside
     expect(store.add).toHaveBeenCalledTimes(1)
-    expect(store.add).toHaveBeenCalledWith(
-      expect.objectContaining({
-        mint: 'https://mint.example.com',
-        amountSats: 384,
-      }),
-    )
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('send() succeeded'),
-    )
+    expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ amountSats: 256 }))
+    expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
+      amountSats: 128, paymentHash: PAYMENT_HASH, quoteId: 'q1',
+    }))
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('send() succeeded'))
     warnSpy.mockRestore()
+  })
+
+  describe('melt outcomes that must not read as a definite failure', () => {
+    function setUp(quote: Record<string, unknown>) {
+      const store = mockTokenStore([
+        { token: 'cashuAx', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
+      ])
+      mockWalletInstance.createMeltQuote.mockResolvedValue({ quote: 'q1', amount: 100, fee_reserve: 10 })
+      mockWalletInstance.send.mockResolvedValue({
+        send: [{ amount: 128, id: 'abc', secret: 's2', C: 'c2' }],
+        keep: [{ amount: 256, id: 'abc', secret: 's3', C: 'c3' }],
+      })
+      mockWalletInstance.meltProofs.mockResolvedValue({ quote, change: [] })
+      return store
+    }
+
+    it('treats PAID with a null preimage as unknown', async () => {
+      const store = setUp({ state: 'PAID', payment_preimage: null })
+      const result = await createCashuWallet(store).payInvoice(INVOICE)
+      expect(result.paid).toBe(false)
+      expect(result.outcome).toBe('unknown')
+      // The sent proofs are spent; only keep proofs return to the store
+      expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ amountSats: 256 }))
+      expect(store.reserve).not.toHaveBeenCalled()
+    })
+
+    it('treats PAID with a preimage that does not match the invoice as unknown', async () => {
+      const store = setUp({ state: 'PAID', payment_preimage: 'bb'.repeat(32) })
+      const result = await createCashuWallet(store).payInvoice(INVOICE)
+      expect(result.paid).toBe(false)
+      expect(result.outcome).toBe('unknown')
+      expect(result.preimage).toBeUndefined()
+    })
+
+    it('treats PENDING as unknown and keeps the sent proofs reserved', async () => {
+      const store = setUp({ state: 'PENDING' })
+      const result = await createCashuWallet(store).payInvoice(INVOICE)
+      expect(result.paid).toBe(false)
+      expect(result.outcome).toBe('unknown')
+      expect(store.add).toHaveBeenCalledTimes(1)
+      expect(store.add).toHaveBeenCalledWith(expect.objectContaining({ amountSats: 256 }))
+      expect(store.reserve).toHaveBeenCalledWith(expect.objectContaining({
+        amountSats: 128, paymentHash: PAYMENT_HASH, quoteId: 'q1',
+      }))
+    })
+  })
+
+  it('refuses an undecodable invoice without touching the token store', async () => {
+    const store = mockTokenStore([
+      { token: 'cashuAz', mint: 'https://mint.example.com', amountSats: 500, addedAt: new Date().toISOString() },
+    ])
+    const result = await createCashuWallet(store).payInvoice('lnbc100n1test')
+    expect(result.paid).toBe(false)
+    expect(store.consumeFirst).not.toHaveBeenCalled()
   })
 })
