@@ -4,6 +4,20 @@ import { tryDecodeBolt11, verifyPreimage } from 'farrier-kit'
 import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
 
 /**
+ * nwc-kit raises these before a request is published (connection parsing,
+ * capability discovery, method and encryption checks, request validation), so
+ * the wallet never saw a payment and none can have been made.
+ */
+const PRE_PUBLICATION_FAILURES: Record<string, string> = {
+  INVALID_CONNECTION: 'The NWC connection URI is invalid.',
+  INFO_UNAVAILABLE: 'The NWC wallet published no signed capability event on its relays. Check that the wallet is online and the connection lists the right relays.',
+  UNSUPPORTED_ENCRYPTION: 'This NWC wallet does not support NIP-44 v2 encryption, which 402-mcp requires.',
+  UNSUPPORTED_METHOD: 'This NWC connection does not permit pay_invoice.',
+  UNSUPPORTED_EXTENSION: 'This NWC wallet lacks an extension the request needs.',
+  INVALID_REQUEST: 'The NWC payment request was invalid.',
+}
+
+/**
  * Creates a Nostr Wallet Connect provider that reports success only after an
  * authenticated wallet response and independent BOLT-11 settlement proof.
  */
@@ -41,6 +55,10 @@ export function createNwcWallet(nwcUri: string, clientOptions: NwcClientOptions 
         if (error instanceof NwcError) {
           if (error.code === 'WALLET_ERROR') {
             return { paid: false, method: 'nwc', reason: error.message }
+          }
+          const preflight = PRE_PUBLICATION_FAILURES[error.code]
+          if (preflight) {
+            return { paid: false, method: 'nwc', reason: `${preflight} Nothing was sent to the wallet, so no payment was made.` }
           }
           if (['PUBLISH_FAILED', 'RESPONSE_TIMEOUT', 'REQUEST_ABORTED', 'CLIENT_CLOSED', 'INVALID_RESPONSE'].includes(error.code)) {
             return {

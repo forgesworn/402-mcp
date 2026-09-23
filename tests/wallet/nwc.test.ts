@@ -24,6 +24,9 @@ class WalletTransport implements NwcTransport {
   respond = true
   walletError: { code: string; message: string } | undefined
   methods = 'pay_invoice lookup_invoice'
+  encryption = 'nip44_v2'
+  published = 0
+  noInfo = false
   lookupResult: Record<string, unknown> = {}
   #handler: ((event: NwcEvent) => void) | undefined
 
@@ -32,10 +35,11 @@ class WalletTransport implements NwcTransport {
   }
 
   async query(): Promise<NwcEvent[]> {
+    if (this.noInfo) return []
     return [finalizeEvent({
       kind: 13_194,
       created_at: 1_700_000_000,
-      tags: [['encryption', 'nip44_v2']],
+      tags: [['encryption', this.encryption]],
       content: this.methods,
     }, this.walletSecret) as NwcEvent]
   }
@@ -50,6 +54,7 @@ class WalletTransport implements NwcTransport {
   }
 
   async publish(relays: readonly string[], request: NwcEvent): Promise<NwcPublishResult[]> {
+    this.published++
     const conversationKey = nip44.v2.utils.getConversationKey(this.walletSecret, request.pubkey)
     const { method } = JSON.parse(nip44.v2.decrypt(request.content, conversationKey)) as { method: string }
     const result = method === 'lookup_invoice' ? this.lookupResult : { preimage: this.preimage }
@@ -133,6 +138,19 @@ describe('createNwcWallet', () => {
     const result = await createNwcWallet(transport.uri, { transport }).payInvoice(SETTLED_INVOICE)
     expect(result).toEqual({ paid: false, method: 'nwc', reason: 'Daily budget exhausted' })
     expect(JSON.stringify(result)).not.toContain(CLIENT_SECRET)
+  })
+
+  it.each([
+    ['does not support NIP-44 v2', (t: WalletTransport) => { t.encryption = 'nip04' }, 'NIP-44 v2'],
+    ['does not permit pay_invoice', (t: WalletTransport) => { t.methods = 'get_balance' }, 'pay_invoice'],
+    ['publishes no capability event', (t: WalletTransport) => { t.noInfo = true }, 'capability event'],
+  ])('reports a definite failure, not an unknown one, when the wallet %s', async (_label, setUp, text) => {
+    const transport = new WalletTransport()
+    setUp(transport)
+    const result = await createNwcWallet(transport.uri, { transport, infoTimeoutMs: 200 }).payInvoice(SETTLED_INVOICE)
+    expect(result).toEqual({ paid: false, method: 'nwc', reason: expect.stringContaining(text) })
+    expect(result.reason).toContain('no payment was made')
+    expect(transport.published).toBe(0)
   })
 
   describe('lookupPayment', () => {
