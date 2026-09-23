@@ -57,7 +57,7 @@ Ask your AI agent:
 
 The agent will query Nostr relays for kind 31402 service announcements and return a list of live paid APIs — URLs, pricing, and capabilities. No wallet, no cost. This is just discovery.
 
-Try other searches too — `l402-search("AI inference")` will find [satgate](https://github.com/forgesworn/satgate) (pay-per-token AI inference) and any other services announcing on Nostr.
+Try other searches too — `l402-search("AI inference")` will find [satgate](https://github.com/TheCryptoDonkey/satgate) (pay-per-token AI inference) and any other services announcing on Nostr.
 
 ## 4. Set up a wallet
 
@@ -140,7 +140,7 @@ That's it. Your AI agent just paid for an API call autonomously.
 
 ## What's next
 
-- **More APIs** — try [satgate](https://github.com/forgesworn/satgate) for pay-per-token AI inference
+- **More APIs** — try [satgate](https://github.com/TheCryptoDonkey/satgate) for pay-per-token AI inference
 - **Tool reference** — see the full [tool list](../README.md#tools) in the README
 - **Architecture** — detailed diagrams in [docs/architecture.md](./architecture.md)
 - **Security** — spend safety, SSRF protection, encryption in [docs/security.md](./security.md)
