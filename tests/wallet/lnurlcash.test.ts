@@ -582,6 +582,9 @@ describe('a recovered melt is said out loud', () => {
     const second = await w.payInvoice(INV_1000)
     // Whatever became of this attempt, the earlier one is reported.
     expect(second.reason).toContain('recovered 1 earlier melt')
-    expect(second.reason).toContain(PREIMAGE)
+    expect(second.reason).toContain(HASH_1000.slice(0, 12))
+    expect(second.reason).toContain('l402-reconcile')
+    // The preimage is a credential and never goes into tool output.
+    expect(second.reason).not.toContain(PREIMAGE)
   })
 })

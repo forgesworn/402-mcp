@@ -182,18 +182,19 @@ export function createLnurlcashWallet(
     }
 
     // A reconcile can turn up a payment that landed after an earlier attempt
-    // gave up on it. That preimage is a credential somebody paid for, so it
-    // is said out loud here rather than only filed: the caller is a wallet
-    // asking to spend, and "by the way, that payment you wrote off did go
-    // through" changes what they do next.
+    // gave up on it. That is said out loud here rather than only filed: the
+    // caller is a wallet asking to spend, and "by the way, that payment you
+    // wrote off did go through" changes what they do next. The preimage
+    // itself is a credential, so it stays in the store and out of tool
+    // output; l402-reconcile turns it into a stored credential.
     let recoveredNote = ''
     try {
       const report = await ops.reconcile()
       if (report.recovered.length > 0) {
         const each = report.recovered
-          .map(m => `${m.paymentHashHex.slice(0, 12)}… preimage ${m.preimage}`)
-          .join('; ')
-        recoveredNote = ` Also recovered ${report.recovered.length} earlier melt(s) that settled after being written off: ${each}.`
+          .map(m => `${m.paymentHashHex.slice(0, 12)}…`)
+          .join(', ')
+        recoveredNote = ` Also recovered ${report.recovered.length} earlier melt(s) that settled after being written off (payment hash ${each}); call l402-reconcile with each payment hash to use it.`
       }
     } catch { /* best effort; selection below simply sees fewer notes */ }
 
