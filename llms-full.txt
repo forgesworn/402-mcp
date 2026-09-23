@@ -4,7 +4,7 @@
 
 ## What is 402-mcp?
 
-402-mcp is an MCP (Model Context Protocol) server that gives AI agents economic agency — the ability to discover, pay for, and consume any L402 or x402 payment-gated API without human registration, API keys, or middlemen.
+402-mcp is an MCP (Model Context Protocol) server that gives AI agents economic agency — the ability to discover, pay for, and consume L402 and other Lightning or ecash payment-gated APIs without human registration, API keys, or middlemen.
 
 It implements the client side of the L402 protocol: when an API responds with HTTP 402 (Payment Required), 402-mcp automatically parses the challenge, pays the Lightning invoice, stores the credential, and retries the request — all within a single tool call from the agent's perspective.
 
@@ -80,7 +80,7 @@ src/
     bolt11.ts              # Decode BOLT11 invoices (amount extraction)
     challenge-cache.ts     # Cache parsed challenges for l402-pay
   x402/
-    parse.ts               # Detect X-Payment-Required: x402 header; parse EVM challenge
+    parse.ts               # Experimental custom x402 format: X-Payment-Required: x402 header, EVM challenge body
     payment.ts             # Format payment request with EIP-681 deeplink for human payment
   xcashu/
     parse.ts               # Detect X-Cashu header; parse NUT-18 payment request
@@ -282,7 +282,7 @@ The L402 protocol is an extension of HTTP 402 (Payment Required):
 
 ## Supported 402 Protocol Variants
 
-`l402-fetch` detects and handles five HTTP 402 challenge variants. Detection order in source: LNURLcash, x402, IETF Payment, L402, with xCashu tried immediately after LNURLcash.
+`l402-fetch` detects and handles four HTTP 402 challenge variants, plus an experimental x402 format. Detection order in source: LNURLcash, x402, IETF Payment, L402, with xCashu tried immediately after LNURLcash.
 
 | Protocol | Detection | Credential sent | Autonomous? |
 |----------|-----------|----------------|-------------|
@@ -290,7 +290,7 @@ The L402 protocol is an extension of HTTP 402 (Payment Required):
 | **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment id=… method=lightning …` | `Authorization: Payment <base64url-json>` | Yes (NWC or Cashu) |
 | **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1<base64url>` | `X-LNURLcash: <bearer note URL>` | Yes (note store only) |
 | **xCashu** (NUT-18) | `X-Cashu: creqA<base64url>` | `X-Cashu: <cashuB-token>` | Yes (Cashu wallet only) |
-| **x402** | `X-Payment-Required: x402` + JSON body | Human presents EIP-681 deeplink | No — on-chain EVM; surfaced to human |
+| **x402** (experimental, custom format) | `X-Payment-Required: x402` + JSON body | `X-Payment: <tx hash>` after the human pays | No: payment details shown to the human. Not the x402 specification, whose servers send a base64 `PAYMENT-REQUIRED` header |
 
 LNURLcash is tried before the others because a bearer note is already money in hand: the note URL goes straight into the retry header and the server settles it by rotating the note. A note worth exactly the price is used as it is; otherwise one is split at the mint and the change stays in the store. The chosen note is held pending until the outcome is known, so nothing else can spend it in the meantime. xCashu uses coin selection via `wallet.send(amount, proofs, { includeFees: true })` and restores change proofs to the token store. IETF Payment decodes the base64url charge request to extract the BOLT11 invoice, then pays it through the normal wallet stack and wraps the preimage in a JSON credential.
 

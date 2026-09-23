@@ -1,6 +1,6 @@
 # CLAUDE.md - 402-mcp
 
-L402 + x402 client MCP - AI agents discover, pay for, and consume any payment-gated API autonomously.
+L402 client MCP: AI agents discover, pay for, and consume Lightning and ecash payment-gated APIs within human-set limits. x402 support is experimental and uses a custom format, not the x402 specification.
 
 ## Commands
 
@@ -55,7 +55,7 @@ src/
   wallet/               # Payment implementations (NWC, Cashu melt, human)
   store/                # Persistent JSON stores (credentials, Cashu tokens)
   l402/                 # L402 protocol utilities (parse, detect, cache, bolt11)
-  x402/                 # x402 protocol utilities (parse, payment deeplinks)
+  x402/                 # Experimental custom x402 format (parse, payment details)
 tests/                  # Tests mirror src/ structure (tests/tools/, tests/wallet/, etc.)
   e2e/                  # Integration tests against in-process toll-booth
 ```

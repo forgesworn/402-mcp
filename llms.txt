@@ -1,6 +1,6 @@
 # 402-mcp
 
-> 402-mcp is an MCP server that gives AI agents economic agency — the ability to discover, pay for, and consume any L402 or x402 payment-gated API without human registration, API keys, or middlemen. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits.
+> 402-mcp is an MCP server that gives AI agents economic agency — the ability to discover, pay for, and consume L402 and other Lightning or ecash payment-gated APIs without human registration, API keys, or middlemen. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits.
 
 402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payer methods are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
 
@@ -124,13 +124,13 @@ Three payer methods are tried in priority order:
 
 The agent can override the payment method per-call, or you can configure only the methods you want available.
 
-`l402-fetch` handles five HTTP 402 challenge variants transparently:
+`l402-fetch` handles four HTTP 402 challenge variants, plus an experimental x402 format:
 
 - **L402** (`WWW-Authenticate: L402`) — the primary protocol; Lightning invoice paid via the wallet stack.
 - **IETF Payment** (`WWW-Authenticate: Payment`, `draft-ryan-httpauth-payment-01`) — alternative Lightning path; builds a base64url credential after payment.
 - **LNURLcash** (`X-LNURLcash: lnurlcashreq1…`, LUD-25): autonomous bearer-note payment; hands over a note worth exactly the price, splitting one at the mint if needed. Tried first: no Lightning hop and no swap at the mint.
 - **xCashu** (`X-Cashu: creqA…`, NUT-18) — autonomous ecash payment; selects and sends the exact token amount without a Lightning round-trip.
-- **x402** (`X-Payment-Required: x402`) — on-chain EVM payment; surfaces an EIP-681 deeplink to the human (no autonomous settlement).
+- **x402** (`X-Payment-Required: x402`), experimental: a custom format, not the x402 specification (whose servers send a base64 `PAYMENT-REQUIRED` header), so real x402 services are not supported. Payment details are shown to the human, who pays from their own wallet; nothing is paid autonomously.
 
 ## Safety Model
 

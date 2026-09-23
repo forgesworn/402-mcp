@@ -24,21 +24,18 @@ describe('formatX402PaymentRequest', () => {
     expect(result.json.chainId).toBe(8453)
   })
 
-  it('includes payment deeplink when chainId is known', () => {
-    const result = formatX402PaymentRequest(challenge)
-    expect(result.json.paymentDeeplink).toBe(
-      'ethereum:0x1234567890abcdef1234567890abcdef12345678@8453',
-    )
+  it('emits no EIP-681 link, which would lack the token contract and amount', () => {
+    expect(formatX402PaymentRequest(challenge).json.paymentDeeplink).toBeUndefined()
   })
 
-  it('omits paymentDeeplink when chainId is null', () => {
-    const unknownChain: X402Challenge = {
-      ...challenge,
-      network: 'solana',
-      chainId: null,
-    }
-    const result = formatX402PaymentRequest(unknownChain)
-    expect(result.json.paymentDeeplink).toBeUndefined()
+  it('marks x402 support as experimental', () => {
+    expect(formatX402PaymentRequest(challenge).json.experimental).toContain('custom format')
+  })
+
+  it('does not present a USD price as a quantity of ETH', () => {
+    const result = formatX402PaymentRequest({ ...challenge, asset: 'eth', amountSmallestUnit: null })
+    expect(result.message).toContain('a USD value, payable in ETH')
+    expect(result.message).not.toMatch(/\$1 ETH/)
   })
 
   it('omits chainId when null', () => {
@@ -53,7 +50,7 @@ describe('formatX402PaymentRequest', () => {
 
   it('generates a human-readable message', () => {
     const result = formatX402PaymentRequest(challenge)
-    expect(result.message).toContain('$1')
+    expect(result.message).toContain('1 USDC')
     expect(result.message).toContain('USDC')
     expect(result.message).toContain('base')
     expect(result.message).toContain('0x1234567890abcdef1234567890abcdef12345678')

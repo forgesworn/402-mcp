@@ -567,7 +567,6 @@ describe('handleFetch', () => {
         asset: 'USDC',
         amountUsd: 1,
         chainId: 8453,
-        paymentDeeplink: 'ethereum:0x1234567890abcdef1234567890abcdef12345678@8453',
         message: 'Payment required: $1 USDC on base.',
       }
 
@@ -596,7 +595,6 @@ describe('handleFetch', () => {
       expect(parsed.network).toBe('base')
       expect(parsed.asset).toBe('USDC')
       expect(parsed.amountUsd).toBe(1)
-      expect(parsed.paymentDeeplink).toContain('ethereum:')
       expect(parsed.message).toContain('Payment required')
 
       // Should NOT attempt L402 payment

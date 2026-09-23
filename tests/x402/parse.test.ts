@@ -228,7 +228,7 @@ describe('parseX402Challenge', () => {
 })
 
 describe('buildPaymentDeeplink', () => {
-  it('builds an EIP-681 deeplink for a known network', () => {
+  it('returns null rather than a link with no token contract or amount', () => {
     const challenge: X402Challenge = {
       receiver: '0x1234567890abcdef1234567890abcdef12345678',
       network: 'base',
@@ -237,20 +237,15 @@ describe('buildPaymentDeeplink', () => {
       chainId: 8453,
       amountSmallestUnit: 1000000n,
     }
-    expect(buildPaymentDeeplink(challenge)).toBe(
-      'ethereum:0x1234567890abcdef1234567890abcdef12345678@8453',
-    )
-  })
-
-  it('returns null when chainId is unknown', () => {
-    const challenge: X402Challenge = {
-      receiver: '0x1234567890abcdef1234567890abcdef12345678',
-      network: 'solana',
-      asset: 'usdc',
-      amountUsd: 1,
-      chainId: null,
-      amountSmallestUnit: null,
-    }
     expect(buildPaymentDeeplink(challenge)).toBeNull()
+  })
+})
+
+describe('parseX402Challenge amounts', () => {
+  it('does not turn a USD amount into wei for ETH', () => {
+    const result = parseX402Challenge({
+      x402: { receiver: '0x1234567890abcdef1234567890abcdef12345678', network: 'base', asset: 'eth', amount_usd: 1 },
+    })
+    expect(result!.amountSmallestUnit).toBeNull()
   })
 })

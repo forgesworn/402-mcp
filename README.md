@@ -9,7 +9,7 @@
 [![Nostr](https://img.shields.io/badge/Nostr-Zap%20me-purple)](https://primal.net/p/npub1mgvlrnf5hm9yf0n5mf9nqmvarhvxkc6remu5ec3vf8r0txqkuk7su0e7q2)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/TheCryptoDonkey?logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/TheCryptoDonkey)
 
-L402 + x402 client MCP that gives AI agents economic agency. Discover, pay for, and consume any payment-gated API — no human registration, no API keys, no middlemen.
+L402 client MCP that gives AI agents economic agency. Discover, pay for, and consume Lightning and ecash payment-gated APIs within limits you set: no human registration, no API keys, no middlemen.
 
 - **Discover** paid APIs on Nostr — no URLs needed upfront
 - **Auto-pay** with Lightning (NWC), Cashu ecash, LNURLcash bearer notes, or human QR fallback
@@ -145,7 +145,7 @@ Four payer methods, tried in priority order:
 
 The agent can override the method per-call, or you can configure only the methods you want.
 
-`l402-fetch` handles five HTTP 402 challenge variants transparently:
+`l402-fetch` handles four HTTP 402 challenge variants, plus an experimental x402 format:
 
 | Protocol | Challenge header | Payment |
 |----------|-----------------|---------|
@@ -153,7 +153,7 @@ The agent can override the method per-call, or you can configure only the method
 | **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment` | Lightning invoice via wallet stack |
 | **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1…` | Bearer note handed over directly (requires a note store) |
 | **xCashu** (NUT-18) | `X-Cashu: creqA…` | Ecash token sent directly (requires Cashu wallet) |
-| **x402** | `X-Payment-Required: x402` | On-chain EVM transfer; surfaced to human with EIP-681 deeplink |
+| **x402** (experimental, custom format) | `X-Payment-Required: x402` + JSON body | A custom format, not the x402 specification (whose servers send a base64 `PAYMENT-REQUIRED` header), so real x402 services are not supported. Payment details are shown to the human, who pays from their own wallet |
 
 An LNURLcash challenge is tried first. A bearer note is already money in hand,
 so paying one costs no Lightning hop and no swap at the mint: the note goes
@@ -184,10 +184,10 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 |---------|------|
 | [toll-booth](https://github.com/forgesworn/toll-booth) | Payment-backend agnostic HTTP 402 middleware |
 | [satgate](https://github.com/forgesworn/satgate) | Pay-per-token AI inference proxy (built on toll-booth) |
-| **[402-mcp](https://github.com/forgesworn/402-mcp)** | **MCP client — AI agents discover, pay, and consume L402 + x402 APIs** |
+| **[402-mcp](https://github.com/forgesworn/402-mcp)** | **MCP client: AI agents discover, pay for and consume L402 APIs** |
 | [402-announce](https://github.com/forgesworn/402-announce) | Publish L402 services on Nostr for decentralised discovery |
 
-402-mcp is the **wallet-provider agnostic** alternative to Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools) and Coinbase's x402 — no Lightning node required, multiple wallets, encrypted credentials.
+402-mcp is the **wallet-provider agnostic** alternative to Lightning Labs' [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools): no Lightning node required, multiple wallets, encrypted credentials.
 
 <details>
 <summary>Full comparison</summary>

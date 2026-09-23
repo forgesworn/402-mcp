@@ -1,6 +1,6 @@
 # Gemini Instructions — 402-mcp
 
-L402 + x402 client MCP server. AI agents discover, pay for, and consume any payment-gated API autonomously.
+L402 client MCP server. AI agents discover, pay for, and consume Lightning and ecash payment-gated APIs within human-set limits. x402 support is experimental and uses a custom format.
 
 ## Commands
 
