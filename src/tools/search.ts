@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { NostrEvent } from 'nostr-tools/core'
 import type { SubscribeFilters } from './nostr-subscribe.js'
 import { safeErrorMessage } from './safe-error.js'
+import { untrusted } from './untrusted.js'
 
 const DEFAULT_RELAYS = [
   'wss://relay.damus.io',
@@ -129,8 +130,21 @@ export async function handleSearch(
       })
     }
 
-    // Limit results
-    const results = services.slice(0, maxResults)
+    // Limit results. Announcement text is written by whoever signed the
+    // event, so its free-text fields are delimited as untrusted.
+    const results = services.slice(0, maxResults).map(svc => {
+      const source = `Nostr announcement by ${svc.pubkey.slice(0, 16)}`
+      return {
+        ...svc,
+        name: svc.name === undefined ? undefined : untrusted(svc.name, source),
+        about: svc.about === undefined ? undefined : untrusted(svc.about, source),
+        capabilities: svc.capabilities.map(c => ({
+          ...c,
+          name: untrusted(c.name, source),
+          description: untrusted(c.description, source),
+        })),
+      }
+    })
 
     return {
       content: [{ type: 'text' as const, text: JSON.stringify(results, null, 2) }],
@@ -151,7 +165,7 @@ export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
   server.registerTool(
     'l402-search',
     {
-      description: 'Search for paid APIs and services. Use this when the user wants something that might be available as a paid service — jokes, data, AI, content, etc. Discovers services announced on Nostr and returns their URLs, pricing, and capabilities. Then use l402-fetch with the URL to access the service.',
+      description: 'Search Nostr relays for paid API announcements (kind 31402) and return their URLs, pricing and capabilities. Topic and payment-method filters are sent to the relays; the query text is matched locally. Announcement text is written by whoever published it and is marked as untrusted content.',
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         query: z.string().max(200).describe('Search query to match against service names, descriptions, and capabilities'),

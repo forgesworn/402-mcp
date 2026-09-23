@@ -4,7 +4,11 @@ import type { WalletMethod } from '../wallet/types.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { SpendTracker } from '../spend-tracker.js'
+import type { PendingPayment } from '../store/pending-payments.js'
+import type { ChallengeCache } from '../l402/challenge-cache.js'
 import { safeErrorMessage } from './safe-error.js'
+
+const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
 
 const CreateInvoiceResponse = z.object({
   bolt11: z.string().min(1).max(20_000),
@@ -22,6 +26,13 @@ export interface BuyCreditsDeps {
   spendTracker: SpendTracker
   generateQr: (invoice: string) => Promise<{ png: string; text: string }>
   walletMethod: () => WalletMethod | undefined
+  /** Ledger of unknown-outcome payments; any entry for a service pauses payment to it. */
+  pendingPayments: {
+    add(entry: PendingPayment): void
+    unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
+  }
+  /** Where an unpaid invoice is kept so l402-pay can settle it by paymentHash. */
+  challengeCache?: ChallengeCache
 }
 
 /** Purchases a volume discount credit tier from a toll-booth server. */
@@ -54,6 +65,21 @@ export async function handleBuyCredits(
           type: 'text' as const,
           text: JSON.stringify({ tiers: body.credit_tiers ?? [] }, null, 2),
         }],
+      }
+    }
+
+    // Purchase mode: an earlier payment to this service may have gone through
+    const unresolved = deps.pendingPayments.unresolvedFor([origin])
+    if (unresolved.length > 0) {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            error: `Payment to this service is paused: ${unresolved.length} earlier payment(s) to it have an unknown outcome. Call l402-reconcile with each paymentHash first.`,
+            unresolvedPayments: unresolved.map(p => p.paymentHash),
+          }),
+        }],
+        isError: true as const,
       }
     }
 
@@ -130,7 +156,7 @@ export async function handleBuyCredits(
       return {
         content: [{
           type: 'text' as const,
-          text: JSON.stringify({ error: 'Per-minute spend limit reached.' }),
+          text: JSON.stringify({ error: deps.spendTracker.refusal(spendAmount, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.' }),
         }],
         isError: true as const,
       }
@@ -143,6 +169,19 @@ export async function handleBuyCredits(
       deps.spendTracker.unrecord(spendAmount)
     }
 
+    if ((payResult.outcome === 'unknown' || (payResult.paid && !payResult.preimage)) && decoded.paymentHash) {
+      deps.pendingPayments.add({
+        paymentHash: decoded.paymentHash,
+        origins: [origin],
+        invoice,
+        costSats: decoded.costSats,
+        protocol: 'l402',
+        method: payResult.method,
+        macaroon,
+        createdAt: new Date().toISOString(),
+      })
+    }
+
     if (payResult.outcome === 'unknown') {
       return {
         content: [{
@@ -153,7 +192,7 @@ export async function handleBuyCredits(
             amountSats: args.amountSats,
             paymentHash: decoded.paymentHash,
             method: payResult.method,
-            message: payResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
+            message: payResult.reason ?? `Payment may have executed. ${RECONCILE_HINT}`,
           }, null, 2),
         }],
         isError: true as const,
@@ -189,7 +228,7 @@ export async function handleBuyCredits(
             amountSats: args.amountSats,
             paymentHash: decoded.paymentHash,
             method: payResult.method,
-            message: 'The wallet reported payment without a settlement preimage. Reconcile the original invoice before retrying.',
+            message: `The wallet reported payment without a settlement preimage. ${RECONCILE_HINT}`,
           }, null, 2),
         }],
         isError: true as const,
@@ -198,6 +237,16 @@ export async function handleBuyCredits(
 
     // Human wallet timed out — return QR so user can pay manually
     if (payResult.method === 'human') {
+      if (decoded.paymentHash) {
+        deps.challengeCache?.set({
+          invoice,
+          macaroon,
+          paymentHash: decoded.paymentHash,
+          costSats: decoded.costSats,
+          expiresAt: Date.now() + decoded.expiry * 1000,
+          url: args.url,
+        })
+      }
       let qrText: string | undefined
       let qrPngBase64: string | undefined
       try {

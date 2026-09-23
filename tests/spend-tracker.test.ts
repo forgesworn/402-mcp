@@ -1,4 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
 import { SpendTracker } from '../src/spend-tracker.js'
 
 describe('SpendTracker', () => {
@@ -56,16 +59,55 @@ describe('SpendTracker', () => {
     expect(tracker.wouldExceed(3000, 10000)).toBe(false)
   })
 
-  it('wouldExceed returns false when limit is 0 (unlimited)', () => {
+  it('a per-minute limit of 0 blocks every spend rather than meaning unlimited', () => {
     const tracker = new SpendTracker()
-    tracker.record(999999)
-    expect(tracker.wouldExceed(999999, 0)).toBe(false)
+    expect(tracker.wouldExceed(1, 0)).toBe(true)
+    expect(tracker.tryRecord(1, 0)).toBe(false)
+    expect(tracker.refusal(1, 0)).toContain('MAX_SPEND_PER_MINUTE_SATS is 0')
+    expect(tracker.recentSpend()).toBe(0)
   })
 
-  it('wouldExceed returns false for negative limit (unlimited)', () => {
+  it('a negative limit blocks every spend', () => {
     const tracker = new SpendTracker()
-    tracker.record(999999)
-    expect(tracker.wouldExceed(999999, -1)).toBe(false)
+    expect(tracker.wouldExceed(1, -1)).toBe(true)
+  })
+
+  describe('daily limit', () => {
+    let dir: string
+    beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'l402-spend-')) })
+    afterEach(() => { rmSync(dir, { recursive: true, force: true }); vi.useRealTimers() })
+
+    it('refuses once 24-hour spend would pass it, whatever the per-minute limit', () => {
+      const tracker = new SpendTracker({ maxPerDaySats: 100 })
+      expect(tracker.tryRecord(60, 10_000)).toBe(true)
+      expect(tracker.tryRecord(60, 10_000)).toBe(false)
+      expect(tracker.refusal(60, 10_000)).toContain('MAX_SPEND_PER_DAY_SATS')
+    })
+
+    it('blocks all auto-pay at 0', () => {
+      expect(new SpendTracker({ maxPerDaySats: 0 }).tryRecord(1, 10_000)).toBe(false)
+    })
+
+    it('survives a restart and frees headroom after 24 hours', () => {
+      vi.useFakeTimers({ now: 1_000_000_000_000 })
+      const statePath = join(dir, 'spend-ledger.json')
+      const first = new SpendTracker({ maxPerDaySats: 100, statePath })
+      expect(first.tryRecord(90, 10_000)).toBe(true)
+
+      vi.setSystemTime(1_000_000_000_000 + 60 * 60_000)
+      const restarted = new SpendTracker({ maxPerDaySats: 100, statePath })
+      expect(restarted.dailySpend()).toBe(90)
+      expect(restarted.tryRecord(20, 10_000)).toBe(false)
+
+      vi.setSystemTime(1_000_000_000_000 + 24 * 60 * 60_000 + 1)
+      expect(new SpendTracker({ maxPerDaySats: 100, statePath }).tryRecord(20, 10_000)).toBe(true)
+    })
+
+    it('refuses to start on an unreadable ledger rather than resetting the window', () => {
+      const statePath = join(dir, 'spend-ledger.json')
+      writeFileSync(statePath, 'not json')
+      expect(() => new SpendTracker({ maxPerDaySats: 100, statePath })).toThrow(/spend ledger/)
+    })
   })
 
   it('wouldExceed accounts for expired entries', () => {

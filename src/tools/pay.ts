@@ -5,7 +5,11 @@ import type { WalletMethod, WalletProvider } from '../wallet/types.js'
 import type { ResilientFetchOptions } from '../fetch/resilient-fetch.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { SpendTracker } from '../spend-tracker.js'
+import type { PendingPayment } from '../store/pending-payments.js'
+import type { ConfirmWithHuman } from './confirm.js'
 import { safeErrorMessage } from './safe-error.js'
+
+const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
 
 export interface PayDeps {
   cache: ChallengeCache
@@ -16,6 +20,13 @@ export interface PayDeps {
   spendTracker: SpendTracker
   decodeBolt11: (invoice: string) => DecodedInvoice
   fetchFn: (url: string | URL, init?: RequestInit, options?: ResilientFetchOptions) => Promise<Response>
+  /** Asks the human directly (MCP elicitation) to approve an invoice no challenge produced. */
+  confirmWithHuman: ConfirmWithHuman
+  /** Ledger of unknown-outcome payments; any entry for a service pauses payment to it. */
+  pendingPayments: {
+    add(entry: PendingPayment): void
+    unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
+  }
 }
 
 /** Pays a Lightning invoice using the configured wallet priority (NWC, Cashu, human). */
@@ -35,10 +46,15 @@ export async function handlePay(
   let cachedUrl: string | undefined
 
   let cachedPaymentUrl: string | undefined
+  // True only when the invoice is one a server actually sent this process in
+  // a 402 challenge. Any other invoice is the agent's to supply, which is the
+  // prompt-injection route to the wallet, so it needs the human's approval.
+  let fromChallenge = false
 
   if (paymentHash) {
     const cached = deps.cache.get(paymentHash)
     if (cached) {
+      fromChallenge = args.invoice === undefined || args.invoice === cached.invoice
       invoice = invoice ?? cached.invoice
       macaroon = macaroon ?? cached.macaroon
       cachedUrl = cached.url
@@ -102,20 +118,69 @@ export async function handlePay(
     }
   }
 
+  if (!fromChallenge && wallet.method !== 'human') {
+    const answer = await deps.confirmWithHuman(
+      `An agent asks to pay a ${costSats} sat Lightning invoice that did not come from a payment challenge this server received. Approve only if you asked for this payment.`,
+    )
+    if (answer !== 'accepted') {
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            paid: false,
+            reason: answer === 'unsupported'
+              ? 'l402-pay only pays invoices from payment challenges this server received (via l402-fetch or l402-discover, using their paymentHash). Paying any other invoice needs the human to approve it, and this client cannot ask them.'
+              : 'The human did not approve this payment.',
+          }),
+        }],
+        isError: true as const,
+      }
+    }
+  }
+
+  const origin = cachedUrl ? new URL(cachedUrl).origin : undefined
+  const unresolved = origin ? deps.pendingPayments.unresolvedFor([origin]) : []
+  if (unresolved.length > 0 && wallet.method !== 'human') {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: JSON.stringify({
+          paid: false,
+          paymentState: 'blocked',
+          unresolvedPayments: unresolved.map(p => p.paymentHash),
+          reason: `Payment to this service is paused: ${unresolved.length} earlier payment(s) to it have an unknown outcome. Call l402-reconcile with each paymentHash first.`,
+        }),
+      }],
+      isError: true as const,
+    }
+  }
+
+  const recordUnknown = (method: string) => {
+    if (!decoded.paymentHash) return
+    deps.pendingPayments.add({
+      paymentHash: decoded.paymentHash,
+      origins: origin ? [origin] : [],
+      invoice,
+      costSats,
+      protocol: 'l402',
+      method,
+      macaroon,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
   // Atomic spend-limit check before payment
   if (!deps.spendTracker.tryRecord(costSats, deps.maxSpendPerMinuteSats)) {
     return {
       content: [{
         type: 'text' as const,
-        text: JSON.stringify({ paid: false, reason: 'Per-minute spend limit reached.' }),
+        text: JSON.stringify({ paid: false, reason: deps.spendTracker.refusal(costSats, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.' }),
       }],
       isError: true as const,
     }
   }
 
   try {
-    const origin = cachedUrl ? new URL(cachedUrl).origin : undefined
-
     // If we have a payment page URL (toll-booth), poll it directly for settlement.
     // This avoids the human wallet's long timeout — the user already paid via the page.
     if (cachedPaymentUrl && wallet.method === 'human') {
@@ -170,7 +235,7 @@ export async function handlePay(
           text: JSON.stringify({
             paid: false,
             paymentState: 'unknown',
-            reason: 'Payment not confirmed after 120s. It may still have settled; reconcile this payment before retrying. If you selected a different tier on the payment page, paste the L402 token here.',
+            reason: 'Payment not confirmed after 120s. It may still have settled: call l402-pay again with the same paymentHash to keep checking. If you selected a different tier on the payment page, store the L402 token it shows with l402-store-token.',
             paymentUrl: cachedPaymentUrl,
           }),
         }],
@@ -185,6 +250,10 @@ export async function handlePay(
       deps.spendTracker.unrecord(costSats)
     }
 
+    if (result.outcome === 'unknown' || (result.paid && !result.preimage)) {
+      recordUnknown(result.method)
+    }
+
     if (result.paid && !result.preimage) {
       return {
         content: [{
@@ -194,7 +263,7 @@ export async function handlePay(
             paymentState: 'unknown',
             credentialsStored: false,
             method: result.method,
-            reason: 'The wallet reported payment without a settlement preimage. Reconcile the original invoice before retrying.',
+            reason: `The wallet reported payment without a settlement preimage. ${RECONCILE_HINT}`,
           }, null, 2),
         }],
         isError: true as const,
@@ -232,13 +301,15 @@ export async function handlePay(
       ...(result.outcome === 'unknown' ? { isError: true as const } : {}),
     }
   } catch (err) {
+    recordUnknown(wallet.method)
     return {
       content: [{
         type: 'text' as const,
         text: JSON.stringify({
           error: safeErrorMessage(err),
           paymentState: 'unknown',
-          message: 'The payment attempt threw after budget reservation. Reconcile the original invoice before retrying.',
+          paymentHash: decoded.paymentHash,
+          message: `The payment attempt threw after budget reservation. ${RECONCILE_HINT}`,
         }),
       }],
       isError: true as const,
@@ -251,12 +322,12 @@ export function registerPayTool(server: McpServer, deps: PayDeps): void {
   server.registerTool(
     'l402-pay',
     {
-      description: 'Confirm payment and store credentials. Call this after l402-fetch returns a 402 with a paymentHash — polls the payment server for settlement (up to 30s for human wallet), then stores the credential so the next l402-fetch succeeds. For human wallets, call this immediately after showing the payment URL to the user.',
+      description: 'Pay a challenge that l402-fetch or l402-discover returned, by its paymentHash, and store the credential so the next l402-fetch succeeds. For human wallets, polls the payment page for settlement for up to 120s; call it straight after showing the payment URL to the user. An invoice that did not come from such a challenge is paid only if the human approves it in the client.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
-        invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice to pay. Optional if paymentHash matches a cached challenge from l402-discover.'),
+        invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice. Leave out when paying a challenge by paymentHash; any other invoice needs the human to approve it.'),
         macaroon: z.string().max(10_000).optional().describe('Macaroon from the L402 challenge. Optional if paymentHash matches a cached challenge.'),
-        paymentHash: z.string().max(128).optional().describe('Payment hash to look up cached challenge from l402-discover.'),
+        paymentHash: z.string().max(128).optional().describe('Payment hash of a challenge from l402-fetch or l402-discover.'),
         method: z.enum(['nwc', 'cashu', 'lnurlcash', 'human']).optional().describe('Payment method override. Defaults to wallet priority: NWC > Cashu > LNURLcash > human.'),
       },
     },

@@ -3,6 +3,11 @@ import { dirname } from 'node:path'
 import { getOrCreateKey, encrypt, decrypt, isEncrypted } from './encryption.js'
 
 export interface StoredCredential {
+  /**
+   * Origins this credential was obtained from, and the only ones it may be
+   * sent to. Absent on credentials keyed by their origin, and on older ones.
+   */
+  origins?: string[]
   macaroon: string
   preimage: string
   paymentHash: string
@@ -105,6 +110,7 @@ export class CredentialStore {
     this.purgeExpired()
     return Object.entries(this.data).map(([origin, cred]) => ({
       origin,
+      ...(cred.origins ? { origins: cred.origins } : {}),
       paymentHash: cred.paymentHash,
       creditBalance: cred.creditBalance,
       storedAt: cred.storedAt,

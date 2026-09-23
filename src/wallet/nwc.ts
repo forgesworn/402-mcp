@@ -1,7 +1,21 @@
 import { NwcClient, NwcError, inspectNwcConnection } from '@forgesworn/nwc-kit'
 import type { NwcClientOptions } from '@forgesworn/nwc-kit'
 import { tryDecodeBolt11, verifyPreimage } from 'farrier-kit'
-import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
+
+/**
+ * nwc-kit raises these before a request is published (connection parsing,
+ * capability discovery, method and encryption checks, request validation), so
+ * the wallet never saw a payment and none can have been made.
+ */
+const PRE_PUBLICATION_FAILURES: Record<string, string> = {
+  INVALID_CONNECTION: 'The NWC connection URI is invalid.',
+  INFO_UNAVAILABLE: 'The NWC wallet published no signed capability event on its relays. Check that the wallet is online and the connection lists the right relays.',
+  UNSUPPORTED_ENCRYPTION: 'This NWC wallet does not support NIP-44 v2 encryption, which 402-mcp requires.',
+  UNSUPPORTED_METHOD: 'This NWC connection does not permit pay_invoice.',
+  UNSUPPORTED_EXTENSION: 'This NWC wallet lacks an extension the request needs.',
+  INVALID_REQUEST: 'The NWC payment request was invalid.',
+}
 
 /**
  * Creates a Nostr Wallet Connect provider that reports success only after an
@@ -33,7 +47,7 @@ export function createNwcWallet(nwcUri: string, clientOptions: NwcClientOptions 
             paid: false,
             method: 'nwc',
             outcome: 'unknown',
-            reason: 'NWC wallet responded but settlement could not be proven. Reconcile the original invoice before retrying.',
+            reason: 'NWC wallet responded but settlement could not be proven. Call l402-reconcile with this payment hash before paying this service again.',
           }
         }
         return { paid: true, preimage: paid.preimage, method: 'nwc' }
@@ -42,12 +56,16 @@ export function createNwcWallet(nwcUri: string, clientOptions: NwcClientOptions 
           if (error.code === 'WALLET_ERROR') {
             return { paid: false, method: 'nwc', reason: error.message }
           }
+          const preflight = PRE_PUBLICATION_FAILURES[error.code]
+          if (preflight) {
+            return { paid: false, method: 'nwc', reason: `${preflight} Nothing was sent to the wallet, so no payment was made.` }
+          }
           if (['PUBLISH_FAILED', 'RESPONSE_TIMEOUT', 'REQUEST_ABORTED', 'CLIENT_CLOSED', 'INVALID_RESPONSE'].includes(error.code)) {
             return {
               paid: false,
               method: 'nwc',
               outcome: 'unknown',
-              reason: 'NWC payment outcome is unknown. Reconcile the original invoice before retrying.',
+              reason: 'NWC payment outcome is unknown. Call l402-reconcile with this payment hash before paying this service again.',
             }
           }
         }
@@ -57,8 +75,38 @@ export function createNwcWallet(nwcUri: string, clientOptions: NwcClientOptions 
           paid: false,
           method: 'nwc',
           outcome: 'unknown',
-          reason: 'NWC payment outcome is unknown. Reconcile the original invoice before retrying.',
+          reason: 'NWC payment outcome is unknown. Call l402-reconcile with this payment hash before paying this service again.',
         }
+      } finally {
+        client?.close()
+      }
+    },
+
+    async lookupPayment(paymentHash: string): Promise<PaymentLookup> {
+      let client: NwcClient | undefined
+      try {
+        client = new NwcClient(nwcUri, clientOptions)
+        const tx = await client.lookupInvoice({ payment_hash: paymentHash })
+        if (tx.state === 'settled' && tx.preimage && verifyPreimage(tx.preimage, paymentHash)) {
+          return { state: 'settled', preimage: tx.preimage.toLowerCase() }
+        }
+        if (tx.state === 'failed' || tx.state === 'expired') {
+          return { state: 'failed', reason: `The wallet reports the payment as ${tx.state}.` }
+        }
+        return {
+          state: 'pending',
+          reason: tx.state === 'settled'
+            ? 'The wallet reports the payment as settled but gave no preimage that matches the invoice.'
+            : `The wallet reports the payment as ${tx.state ?? 'in an unknown state'}.`,
+        }
+      } catch (error) {
+        if (error instanceof NwcError && error.code === 'UNSUPPORTED_METHOD') {
+          return { state: 'pending', reason: 'This NWC wallet does not support lookup_invoice. Check the payment in the wallet itself.' }
+        }
+        if (error instanceof NwcError && error.code === 'WALLET_ERROR') {
+          return { state: 'pending', reason: 'The wallet could not look this payment up. Check it in the wallet itself.' }
+        }
+        return { state: 'pending', reason: 'The NWC wallet could not be reached. Try again later.' }
       } finally {
         client?.close()
       }

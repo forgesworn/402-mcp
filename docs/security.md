@@ -6,7 +6,7 @@
 
 Two complementary caps prevent runaway autonomous spending:
 
-- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. Above this threshold the agent must ask for human approval.
+- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that.
 - **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
 
 Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls — concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
@@ -41,7 +41,7 @@ Stored credentials (macaroons, preimages, payment hashes) are encrypted at rest 
 
 The 256-bit encryption key is sourced in priority order:
 
-1. **OS keychain** (via `keytar`) — the key is stored in the system credential manager (macOS Keychain, GNOME Keyring, Windows Credential Vault). This keeps the key out of the filesystem entirely.
+1. **OS keychain.** On macOS the key is kept in the login Keychain through the built-in `security` command-line tool, and goes in on stdin, never as an argument. On other platforms the optional `keytar` module is tried (GNOME Keyring, Windows Credential Vault); it is archived upstream and often fails to load on current Node, in which case the file fallback is used. If `~/.402-mcp/encryption.key` already exists on macOS it takes precedence and is copied into the Keychain, so data encrypted under it stays readable.
 2. **File-based fallback** — if the OS keychain is unavailable, a random key is generated and written to `~/.402-mcp/encryption.key` with `0o600` permissions (owner read/write only). A warning is emitted at startup: the credentials are encrypted but the key is accessible to anyone with file access.
 
 The credential store directory is created with `0o700` permissions. Writes use an atomic rename pattern (write to `.tmp`, then `renameSync`) to prevent data loss on crash. Legacy plaintext credential files are automatically migrated to encrypted format on first load.
@@ -60,7 +60,9 @@ These checks prevent header injection attacks, since preimages and macaroons are
 
 When running in HTTP mode (`TRANSPORT=http`), the server applies several layers of defence:
 
-- **Loopback-only binding** — the server binds to `127.0.0.1` by default. A warning is emitted if `BIND_ADDRESS` is changed to a non-loopback address.
+- **Bearer token**: every `/mcp` request must carry `Authorization: Bearer <token>`, compared in constant time. The token is read from `HTTP_AUTH_TOKEN_FILE`, a private `0600` file, following the same rules as `NWC_URI_FILE`; a token in the environment is refused, and the server will not start in http mode without one.
+- **DNS rebinding protection**: the MCP SDK's host validation is on. Only a `Host` header naming a loopback address with the port (on a loopback bind), the bound address, or an entry in `HTTP_ALLOWED_HOSTS` is answered, so a web page that rebinds its own name to `127.0.0.1` cannot drive the server from the user's browser.
+- **Loopback-only binding**: the server binds to `127.0.0.1` by default. A warning is emitted if `BIND_ADDRESS` is changed to a non-loopback address, since the token would then cross the network; use a TLS reverse proxy.
 - **Rate limiting** — a sliding-window rate limiter allows 100 requests per 60 seconds per IP address. The bucket map is capped at 10,000 entries and stale buckets are evicted every 60 seconds to prevent memory exhaustion from IP cycling.
 - **Security headers** — every response includes:
   - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`

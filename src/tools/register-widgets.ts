@@ -25,7 +25,7 @@ export function registerWidgets(server: McpServer): void {
     'Payment Confirmation',
     'ui://402-mcp/payment-confirmation.html',
     { description: 'Payment confirmation dialog for L402/x402/xcashu services' },
-    async () => ({
+    () => ({
       contents: [{
         uri: 'ui://402-mcp/payment-confirmation.html',
         mimeType: RESOURCE_MIME_TYPE,
@@ -52,7 +52,7 @@ export function registerWidgets(server: McpServer): void {
         ui: { resourceUri: 'ui://402-mcp/service-directory.html' },
       },
     },
-    async () => ({
+    () => ({
       content: [{
         type: 'text' as const,
         text: JSON.stringify({
@@ -68,7 +68,7 @@ export function registerWidgets(server: McpServer): void {
     'Service Directory',
     'ui://402-mcp/service-directory.html',
     { description: 'Searchable directory of paid API services' },
-    async () => ({
+    () => ({
       contents: [{
         uri: 'ui://402-mcp/service-directory.html',
         mimeType: RESOURCE_MIME_TYPE,
@@ -92,7 +92,7 @@ export function registerWidgets(server: McpServer): void {
         ui: { resourceUri: 'ui://402-mcp/wallet-dashboard.html' },
       },
     },
-    async () => ({
+    () => ({
       content: [{
         type: 'text' as const,
         text: JSON.stringify({
@@ -108,7 +108,7 @@ export function registerWidgets(server: McpServer): void {
     'Wallet Dashboard',
     'ui://402-mcp/wallet-dashboard.html',
     { description: 'Wallet status dashboard with credentials and balances' },
-    async () => ({
+    () => ({
       contents: [{
         uri: 'ui://402-mcp/wallet-dashboard.html',
         mimeType: RESOURCE_MIME_TYPE,

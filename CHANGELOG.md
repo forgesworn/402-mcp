@@ -1,33 +1,3 @@
-## [3.15.4](https://github.com/forgesworn/402-mcp/compare/v3.15.3...v3.15.4) (2026-04-12)
-
-
-### Bug Fixes
-
-* replace bolt11 with light-bolt11-decoder to drop elliptic vulnerability ([e824366](https://github.com/forgesworn/402-mcp/commit/e8243660a83f07cb2eb193d3f2f3c5b1f93bdbcb))
-
-## [3.15.3](https://github.com/forgesworn/402-mcp/compare/v3.15.2...v3.15.3) (2026-04-12)
-
-
-### Bug Fixes
-
-* resolve runtime dependency vulnerabilities ([a7f4450](https://github.com/forgesworn/402-mcp/commit/a7f4450c3c23d2418178c24bb856dfb99221ec62))
-
-## [3.15.2](https://github.com/forgesworn/402-mcp/compare/v3.15.1...v3.15.2) (2026-04-07)
-
-
-### Bug Fixes
-
-* use dev.forgesworn namespace for MCP registry ([6166adb](https://github.com/forgesworn/402-mcp/commit/6166adbda47872565fc9989a3e3b325350d069de))
-
-## [3.15.1](https://github.com/forgesworn/402-mcp/compare/v3.15.0...v3.15.1) (2026-04-07)
-
-
-### Bug Fixes
-
-* publish mcpName field for MCP registry validation ([7e0c8ff](https://github.com/forgesworn/402-mcp/commit/7e0c8ffca0718499782fb813a900832b651a77e4))
-
-# [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
-
 ## 4.2.2 (2026-09-23)
 
 ### Bug Fixes
@@ -98,7 +68,35 @@
 
 - adopt nwc-kit with explicit payment uncertainty (#12)
 
+## [3.15.4](https://github.com/forgesworn/402-mcp/compare/v3.15.3...v3.15.4) (2026-04-12)
 
+
+### Bug Fixes
+
+* replace bolt11 with light-bolt11-decoder to drop elliptic vulnerability ([e824366](https://github.com/forgesworn/402-mcp/commit/e8243660a83f07cb2eb193d3f2f3c5b1f93bdbcb))
+
+## [3.15.3](https://github.com/forgesworn/402-mcp/compare/v3.15.2...v3.15.3) (2026-04-12)
+
+
+### Bug Fixes
+
+* resolve runtime dependency vulnerabilities ([a7f4450](https://github.com/forgesworn/402-mcp/commit/a7f4450c3c23d2418178c24bb856dfb99221ec62))
+
+## [3.15.2](https://github.com/forgesworn/402-mcp/compare/v3.15.1...v3.15.2) (2026-04-07)
+
+
+### Bug Fixes
+
+* use dev.forgesworn namespace for MCP registry ([6166adb](https://github.com/forgesworn/402-mcp/commit/6166adbda47872565fc9989a3e3b325350d069de))
+
+## [3.15.1](https://github.com/forgesworn/402-mcp/compare/v3.15.0...v3.15.1) (2026-04-07)
+
+
+### Bug Fixes
+
+* publish mcpName field for MCP registry validation ([7e0c8ff](https://github.com/forgesworn/402-mcp/commit/7e0c8ffca0718499782fb813a900832b651a77e4))
+
+# [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
 
 ### Features

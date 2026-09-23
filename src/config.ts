@@ -10,6 +10,8 @@ export interface L402Config {
   lnurlcashNotesPath: string | undefined
   maxAutoPaySats: number
   maxSpendPerMinuteSats: number
+  /** Auto-pay cap over any rolling 24 hours, persisted across restarts. 0 blocks auto-pay. */
+  maxSpendPerDaySats: number
   credentialStorePath: string
   transport: 'stdio' | 'http'
   port: number
@@ -25,6 +27,10 @@ export interface L402Config {
   /** SOCKS5 proxy: `onion` scope from TOR_PROXY, `all` scope from SOCKS_PROXY */
   proxy: { url: string; scope: ProxyScope } | undefined
   hnsGatewayUrl: string
+  /** Bearer token the HTTP transport requires. Always set when transport is http. */
+  httpAuthToken: string | undefined
+  /** Extra Host header values the HTTP transport accepts (HTTP_ALLOWED_HOSTS). */
+  httpAllowedHosts: string[]
 }
 
 function assertNonNegativeInt(name: string, value: number): void {
@@ -45,40 +51,56 @@ function assertRange(name: string, value: number, min: number, max: number): voi
   }
 }
 
-function readNwcUriFile(filePath: string): string {
+/**
+ * Reads a bearer secret from a private file: a regular file, owner-only on
+ * POSIX, bounded in size, read in full exactly once.
+ */
+function readSecretFile(name: string, filePath: string): string {
   const resolvedPath = resolve(filePath)
   const descriptor = openSync(resolvedPath, 'r')
   let bytes: Buffer | undefined
   try {
     const stats = fstatSync(descriptor)
     if (!stats.isFile() || stats.size === 0 || stats.size > 8192) {
-      throw new Error('NWC_URI_FILE must be a non-empty regular file no larger than 8192 bytes')
+      throw new Error(`${name} must be a non-empty regular file no larger than 8192 bytes`)
     }
     if (process.platform !== 'win32' && (stats.mode & 0o077) !== 0) {
-      throw new Error('NWC_URI_FILE permissions are too broad; run chmod 600 on the file')
+      throw new Error(`${name} permissions are too broad; run chmod 600 on the file`)
     }
     bytes = Buffer.allocUnsafe(stats.size)
     let offset = 0
     while (offset < bytes.length) {
       const count = readSync(descriptor, bytes, offset, bytes.length - offset, null)
-      if (count === 0) throw new Error('NWC_URI_FILE changed while it was being read')
+      if (count === 0) throw new Error(`${name} changed while it was being read`)
       offset += count
     }
     const extra = Buffer.allocUnsafe(1)
     try {
       if (readSync(descriptor, extra, 0, 1, null) !== 0) {
-        throw new Error('NWC_URI_FILE changed while it was being read')
+        throw new Error(`${name} changed while it was being read`)
       }
     } finally {
       extra.fill(0)
     }
-    const uri = bytes.toString('utf-8').trim()
-    inspectNwcConnection(uri)
-    return uri
+    return bytes.toString('utf-8').trim()
   } finally {
     bytes?.fill(0)
     closeSync(descriptor)
   }
+}
+
+function readNwcUriFile(filePath: string): string {
+  const uri = readSecretFile('NWC_URI_FILE', filePath)
+  inspectNwcConnection(uri)
+  return uri
+}
+
+function readHttpAuthTokenFile(filePath: string): string {
+  const token = readSecretFile('HTTP_AUTH_TOKEN_FILE', filePath)
+  if (token.length < 32 || /\s/.test(token)) {
+    throw new Error('HTTP_AUTH_TOKEN_FILE must hold a single token of at least 32 characters, e.g. from: openssl rand -hex 32')
+  }
+  return token
 }
 
 /** Loads and validates configuration from environment variables, applying defaults. */
@@ -98,6 +120,20 @@ export function loadConfig(): L402Config {
   if (transport !== 'stdio' && transport !== 'http') {
     throw new Error(`TRANSPORT must be 'stdio' or 'http'; got '${transport}'`)
   }
+
+  const rawHttpToken = process.env.HTTP_AUTH_TOKEN
+  const httpTokenFile = process.env.HTTP_AUTH_TOKEN_FILE
+  delete process.env.HTTP_AUTH_TOKEN
+  delete process.env.HTTP_AUTH_TOKEN_FILE
+  if (rawHttpToken !== undefined) {
+    throw new Error('HTTP_AUTH_TOKEN is disabled because bearer secrets must not be stored in environment variables; use HTTP_AUTH_TOKEN_FILE')
+  }
+  // The HTTP transport can spend from the wallet, so it never runs open.
+  if (transport === 'http' && !httpTokenFile) {
+    throw new Error('TRANSPORT=http requires HTTP_AUTH_TOKEN_FILE: a private 0600 file holding the bearer token clients must send')
+  }
+  const httpAuthToken = transport === 'http' && httpTokenFile ? readHttpAuthTokenFile(httpTokenFile) : undefined
+  const httpAllowedHosts = (process.env.HTTP_ALLOWED_HOSTS ?? '').split(',').map(h => h.trim()).filter(Boolean)
 
   const transportPref = process.env.TRANSPORT_PREFERENCE
   const transportPreference = transportPref
@@ -121,6 +157,7 @@ export function loadConfig(): L402Config {
     lnurlcashNotesPath: process.env.LNURLCASH_NOTES,
     maxAutoPaySats: parseInt(process.env.MAX_AUTO_PAY_SATS ?? '1000', 10),
     maxSpendPerMinuteSats: parseInt(process.env.MAX_SPEND_PER_MINUTE_SATS ?? '10000', 10),
+    maxSpendPerDaySats: parseInt(process.env.MAX_SPEND_PER_DAY_SATS ?? '5000', 10),
     credentialStorePath: process.env.CREDENTIAL_STORE ?? defaultCredentialStore,
     transport,
     port: parseInt(process.env.PORT ?? '3402', 10),
@@ -135,10 +172,13 @@ export function loadConfig(): L402Config {
     transportPreference,
     proxy,
     hnsGatewayUrl,
+    httpAuthToken,
+    httpAllowedHosts,
   }
 
   assertNonNegativeInt('MAX_AUTO_PAY_SATS', config.maxAutoPaySats)
   assertNonNegativeInt('MAX_SPEND_PER_MINUTE_SATS', config.maxSpendPerMinuteSats)
+  assertNonNegativeInt('MAX_SPEND_PER_DAY_SATS', config.maxSpendPerDaySats)
   assertRange('PORT', config.port, 1, 65535)
   assertPositiveInt('FETCH_TIMEOUT_MS', config.fetchTimeoutMs)
   assertNonNegativeInt('FETCH_MAX_RETRIES', config.fetchMaxRetries)
@@ -171,9 +211,9 @@ export function loadConfig(): L402Config {
     }
   }
 
-  // Warn if BIND_ADDRESS is non-loopback (server will be network-accessible without auth)
+  // Warn if BIND_ADDRESS is non-loopback: the bearer token then crosses the network
   if (config.transport === 'http' && config.bindAddress !== '127.0.0.1' && config.bindAddress !== '::1') {
-    console.error(`Warning: BIND_ADDRESS is ${config.bindAddress} — server will be network-accessible without authentication. Use a reverse proxy with TLS and auth for production.`)
+    console.error(`Warning: BIND_ADDRESS is ${config.bindAddress}, so the server is reachable from the network and its bearer token travels in cleartext. Put it behind a TLS reverse proxy and list the proxy's host in HTTP_ALLOWED_HOSTS.`)
   }
 
   // Warn if CORS allows all origins (potential CSRF risk on HTTP transport)

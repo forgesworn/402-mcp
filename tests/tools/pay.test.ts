@@ -17,6 +17,9 @@ const baseDeps = {
   maxSpendPerMinuteSats: 10_000,
   spendTracker: new SpendTracker(),
   decodeBolt11: () => ({ costSats: 10, paymentHash: null, expiry: 3600 }),
+  pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([]) },
+  // Most tests pass an invoice directly; approval is exercised on its own below.
+  confirmWithHuman: vi.fn().mockResolvedValue('accepted'),
 }
 
 describe('handlePay', () => {
@@ -383,7 +386,7 @@ describe('handlePay', () => {
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown', method: 'nwc' })
-    expect(parsed.reason).toContain('Reconcile')
+    expect(parsed.reason).toContain('l402-reconcile')
     expect(result.isError).toBe(true)
     expect(spendTracker.recentSpend()).toBe(50)
   })
@@ -418,7 +421,7 @@ describe('handlePay', () => {
 
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed).toMatchObject({ paid: false, paymentState: 'unknown' })
-    expect(parsed.reason).toContain('reconcile')
+    expect(parsed.reason).toContain('call l402-pay again')
     expect(result.isError).toBe(true)
     now.mockReturnValue(0)
     expect(spendTracker.recentSpend()).toBe(50)
@@ -448,5 +451,80 @@ describe('handlePay', () => {
     expect(parsed.paid).toBe(false)
     expect(parsed.reason).toContain('no encoded amount')
     expect(mockWallet.payInvoice).not.toHaveBeenCalled()
+  })
+
+  it('refuses to pay a service with an unresolved payment, and records a new unknown one', async () => {
+    const cache = new ChallengeCache()
+    cache.set({ invoice: 'lnbc...', macaroon: 'mac123', paymentHash: HASH_1, costSats: 10, expiresAt: Date.now() + 3600_000, url: 'https://api.example.com/x' })
+    const wallet = { method: 'nwc' as const, available: true, payInvoice: vi.fn().mockResolvedValue({ paid: false, method: 'nwc', outcome: 'unknown' }) }
+
+    const blocked = await handlePay({ paymentHash: HASH_1 }, {
+      ...baseDeps,
+      cache,
+      resolveWallet: () => wallet,
+      storeCredential: vi.fn(),
+      maxAutoPaySats: 1000,
+      spendTracker: new SpendTracker(),
+      pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([{ paymentHash: HASH_2 }]) },
+    })
+    expect(blocked.isError).toBe(true)
+    expect(JSON.parse(blocked.content[0].text).paymentState).toBe('blocked')
+    expect(wallet.payInvoice).not.toHaveBeenCalled()
+
+    const add = vi.fn()
+    await handlePay({ paymentHash: HASH_1 }, {
+      ...baseDeps,
+      cache,
+      resolveWallet: () => wallet,
+      storeCredential: vi.fn(),
+      maxAutoPaySats: 1000,
+      spendTracker: new SpendTracker(),
+      decodeBolt11: () => ({ costSats: 10, paymentHash: HASH_1, expiry: 3600 }),
+      pendingPayments: { add, unresolvedFor: vi.fn().mockReturnValue([]) },
+    })
+    expect(add).toHaveBeenCalledWith(expect.objectContaining({ paymentHash: HASH_1, origins: ['https://api.example.com'], macaroon: 'mac123' }))
+  })
+
+  describe('invoices that did not come from a received challenge', () => {
+    const wallet = () => ({ method: 'nwc' as const, available: true, payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }) })
+
+    it('refuses an invoice the agent supplied when the client cannot ask the human', async () => {
+      const w = wallet()
+      const confirmWithHuman = vi.fn().mockResolvedValue('unsupported')
+      const result = await handlePay({ invoice: 'lnbc10n1injected', macaroon: 'mac' }, {
+        ...baseDeps, cache: new ChallengeCache(), resolveWallet: () => w, storeCredential: vi.fn(), maxAutoPaySats: 1000,
+        spendTracker: new SpendTracker(), confirmWithHuman,
+      })
+      expect(result.isError).toBe(true)
+      expect(JSON.parse(result.content[0].text).reason).toContain('only pays invoices from payment challenges')
+      expect(w.payInvoice).not.toHaveBeenCalled()
+    })
+
+    it('refuses a different invoice slipped in beside a cached paymentHash', async () => {
+      const w = wallet()
+      const cache = new ChallengeCache()
+      cache.set({ invoice: 'lnbc10n1real', macaroon: 'mac', paymentHash: HASH_3, costSats: 10, expiresAt: Date.now() + 60_000, url: 'https://api.example.com/x' })
+      const confirmWithHuman = vi.fn().mockResolvedValue('declined')
+      const result = await handlePay({ invoice: 'lnbc10n1other', paymentHash: HASH_3 }, {
+        ...baseDeps, cache, resolveWallet: () => w, storeCredential: vi.fn(), maxAutoPaySats: 1000,
+        spendTracker: new SpendTracker(), confirmWithHuman,
+      })
+      expect(result.isError).toBe(true)
+      expect(confirmWithHuman).toHaveBeenCalled()
+      expect(w.payInvoice).not.toHaveBeenCalled()
+    })
+
+    it('pays a cached challenge by paymentHash without asking', async () => {
+      const w = wallet()
+      const cache = new ChallengeCache()
+      cache.set({ invoice: 'lnbc10n1real', macaroon: 'mac', paymentHash: HASH_4, costSats: 10, expiresAt: Date.now() + 60_000, url: 'https://api.example.com/x' })
+      const confirmWithHuman = vi.fn()
+      await handlePay({ paymentHash: HASH_4 }, {
+        ...baseDeps, cache, resolveWallet: () => w, storeCredential: vi.fn().mockReturnValue(true), maxAutoPaySats: 1000,
+        spendTracker: new SpendTracker(), confirmWithHuman,
+      })
+      expect(confirmWithHuman).not.toHaveBeenCalled()
+      expect(w.payInvoice).toHaveBeenCalledWith('lnbc10n1real', expect.anything())
+    })
   })
 })

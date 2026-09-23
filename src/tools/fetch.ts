@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import type { CredentialStore } from '../store/credentials.js'
+import type { CredentialStore, StoredCredential } from '../store/credentials.js'
 import type { L402Challenge } from '../l402/parse.js'
 import type { DecodedInvoice } from '../l402/bolt11.js'
 import type { ServerInfo } from '../l402/detect.js'
@@ -12,8 +12,10 @@ import type { X402Challenge } from '../x402/parse.js'
 import type { XCashuChallenge } from '../xcashu/parse.js'
 import type { LnurlcashChallenge } from '../xlnurlcash/parse.js'
 import type { IETFPaymentChallenge } from '../ietf-payment/parse.js'
+import type { PendingPayment } from '../store/pending-payments.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
+import { untrusted } from './untrusted.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 const MACAROON_RE = /^[A-Za-z0-9+/_\-=]+$/
@@ -63,7 +65,14 @@ export interface FetchDeps {
   parseIETFPayment: (header: string) => IETFPaymentChallenge | null
   /** Builds base64url credential for Authorization: Payment header. */
   buildIETFCredential: (challenge: IETFPaymentChallenge, preimage: string) => string
+  /** Ledger of unknown-outcome payments; any entry for a service pauses auto-pay to it. */
+  pendingPayments: {
+    add(entry: PendingPayment): void
+    unresolvedFor(origins: string[], pubkey?: string): PendingPayment[]
+  }
 }
+
+const RECONCILE_HINT = 'Call l402-reconcile with this paymentHash before paying this service again.'
 
 function parseBalance(value: string | null): number | null {
   if (value === null) return null
@@ -71,20 +80,108 @@ function parseBalance(value: string | null): number | null {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : null
 }
 
+type PayOutcome = { paid: boolean; preimage?: string; method: string; outcome?: 'unknown'; reason?: string }
+
+/** A payment that may have executed. Always an error, so the agent does not pay again. */
+function paymentUnknown(result: PayOutcome, costSats: number | null, paymentHash: string | null | undefined, protocol: string) {
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        status: 402,
+        protocol,
+        paymentState: 'unknown',
+        costSats,
+        paymentHash,
+        method: result.method,
+        message: result.outcome === 'unknown'
+          ? (result.reason ?? `Payment may have executed. ${RECONCILE_HINT}`)
+          : `The wallet reported payment without a settlement preimage. ${RECONCILE_HINT}`,
+      }, null, 2),
+    }],
+    isError: true as const,
+  }
+}
+
+/** A payment that definitely did not execute. */
+function paymentFailed(result: PayOutcome, costSats: number | null, paymentHash: string | null | undefined, protocol: string) {
+  return {
+    content: [{
+      type: 'text' as const,
+      text: JSON.stringify({
+        status: 402,
+        protocol,
+        paymentState: 'failed',
+        costSats,
+        paymentHash,
+        method: result.method,
+        message: `Payment failed and no money moved${result.reason ? `: ${result.reason}` : '.'}`,
+      }, null, 2),
+    }],
+    isError: true as const,
+  }
+}
+
+/**
+ * Whether a stored credential may be sent to every one of `origins`. One
+ * stored before origins were recorded is bound only to the origin it is keyed
+ * by, if it is keyed by one.
+ */
+function isBoundTo(cred: StoredCredential, key: string, origins: string[]): boolean {
+  const bound = cred.origins ?? (isOrigin(key) ? [key] : [])
+  return origins.every(o => bound.includes(o))
+}
+
+function isOrigin(value: string): boolean {
+  try { return new URL(value).origin === value } catch { return false }
+}
+
 /** Makes an HTTP request with automatic L402/x402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
-  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string },
+  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string; maxCostSats?: number },
   deps: FetchDeps,
 ) {
   // When multiple URLs are provided (from l402-search results), use transport fallback.
   // The first URL in `urls` is also the primary URL for identity, origin, and payment.
   const primaryUrl = args.urls?.length ? args.urls[0] : args.url
   const origin = new URL(primaryUrl).origin
+  // Every origin this request may reach. A payment made here is recorded
+  // against all of them, and an unresolved one for any of them blocks auto-pay.
+  const candidateOrigins = [...new Set((args.urls?.length ? args.urls : [args.url]).map(u => new URL(u).origin))]
+  const recordUnknown = (entry: Omit<PendingPayment, 'origins' | 'pubkey' | 'createdAt'>) => {
+    deps.pendingPayments.add({
+      ...entry,
+      paymentHash: entry.paymentHash.toLowerCase(),
+      origins: candidateOrigins,
+      ...(args.pubkey ? { pubkey: args.pubkey } : {}),
+      createdAt: new Date().toISOString(),
+    })
+  }
   // When a pubkey is provided (from search results) use it as the credential key so
   // credentials are shared across all transport URLs for the same service.
   // For direct URL calls without a pubkey, fall back to origin-based keying.
-  const credKey = args.pubkey ?? origin
-  const cred = deps.credentialStore.get(credKey)
+  //
+  // The pubkey is only the agent's claim, so a credential is sent only to the
+  // origins it was bought from: `url=https://evil pubkey=<X>` must not hand
+  // X's credential to evil. A credential that is not bound to every origin
+  // this request may reach is left alone, and anything bought here is kept
+  // under the origin instead so it cannot overwrite X's.
+  let credKey = args.pubkey ?? origin
+  let cred = deps.credentialStore.get(credKey)
+  if (cred && !isBoundTo(cred, credKey, candidateOrigins)) {
+    cred = undefined
+    if (args.pubkey) {
+      credKey = origin
+      cred = deps.credentialStore.get(credKey)
+      if (cred && !isBoundTo(cred, credKey, candidateOrigins)) cred = undefined
+    }
+  }
+  // The most this call may auto-pay. maxCostSats lets an agent hold the server
+  // to the price it showed in a preview; it can only lower the configured cap.
+  const autoPayCap = args.maxCostSats !== undefined ? Math.min(args.maxCostSats, deps.maxAutoPaySats) : deps.maxAutoPaySats
+  const capLabel = args.maxCostSats !== undefined && args.maxCostSats < deps.maxAutoPaySats
+    ? `maxCostSats (${args.maxCostSats})`
+    : `MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats})`
   const reqHeaders: Record<string, string> = {}
   // Copy user headers, stripping dangerous hop-by-hop/security-sensitive ones
   if (args.headers) {
@@ -138,11 +235,31 @@ export async function handleFetch(
           text: JSON.stringify({
             status: response.status,
             headers: filterResponseHeaders(response.headers),
-            body,
+            body: untrusted(body, origin),
             creditsRemaining: balance,
             satsPaid: 0,
           }, null, 2),
         }],
+      }
+    }
+
+    // An earlier payment to this service may have gone through. Paying again
+    // before that is settled could buy the same thing twice.
+    if (args.autoPay) {
+      const unresolved = deps.pendingPayments.unresolvedFor(candidateOrigins, args.pubkey)
+      if (unresolved.length > 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 402,
+              paymentState: 'blocked',
+              unresolvedPayments: unresolved.map(p => p.paymentHash),
+              message: `Auto-pay to this service is paused: ${unresolved.length} earlier payment(s) to it have an unknown outcome. Call l402-reconcile with each paymentHash before paying again.`,
+            }, null, 2),
+          }],
+          isError: true as const,
+        }
       }
     }
 
@@ -158,7 +275,7 @@ export async function handleFetch(
       const lnurlcashChallenge = deps.parseLnurlcash(lnurlcashHeader)
       if (lnurlcashChallenge) {
         const lnurlcashAutoPay = args.autoPay ?? false
-        if (lnurlcashAutoPay && lnurlcashChallenge.amount <= deps.maxAutoPaySats) {
+        if (lnurlcashAutoPay && lnurlcashChallenge.amount <= autoPayCap) {
           const lnurlcashWithinLimit = deps.spendTracker.tryRecord(lnurlcashChallenge.amount, deps.maxSpendPerMinuteSats)
           if (lnurlcashWithinLimit) {
             const lnurlcashResult = await deps.payLnurlcash(lnurlcashChallenge)
@@ -185,7 +302,7 @@ export async function handleFetch(
                   text: JSON.stringify({
                     status: retryResponse.status,
                     headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
+                    body: untrusted(retryBody, origin),
                     creditsRemaining: retryBalance,
                     satsPaid: lnurlcashResult.amountSats,
                     paymentMethod: 'lnurlcash',
@@ -207,7 +324,7 @@ export async function handleFetch(
       const xcashuChallenge = deps.parseXCashu(xcashuHeader)
       if (xcashuChallenge) {
         const xcashuAutoPay = args.autoPay ?? false
-        if (xcashuAutoPay && xcashuChallenge.amount <= deps.maxAutoPaySats) {
+        if (xcashuAutoPay && xcashuChallenge.amount <= autoPayCap) {
           const xcashuWithinLimit = deps.spendTracker.tryRecord(xcashuChallenge.amount, deps.maxSpendPerMinuteSats)
           if (xcashuWithinLimit) {
             const xcashuResult = await deps.payXCashu(xcashuChallenge)
@@ -229,7 +346,7 @@ export async function handleFetch(
                   text: JSON.stringify({
                     status: retryResponse.status,
                     headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
+                    body: untrusted(retryBody, origin),
                     creditsRemaining: retryBalance,
                     satsPaid: xcashuResult.amountSats,
                     paymentMethod: 'xcashu',
@@ -293,87 +410,81 @@ export async function handleFetch(
         }
         ietfChallenge.paymentHash = ietfInvoice.paymentHash ?? undefined
         const ietfAutoPay = args.autoPay ?? false
-        if (ietfAutoPay && ietfChallenge.amountSats <= deps.maxAutoPaySats) {
+        if (ietfAutoPay && ietfChallenge.amountSats <= autoPayCap) {
           const ietfWithinLimit = deps.spendTracker.tryRecord(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats)
           if (ietfWithinLimit) {
             const ietfPayResult = await deps.payInvoice(ietfChallenge.invoice, { serverOrigin: origin })
+            // A payment attempt ends here whatever happens: falling through to
+            // the L402 rail after this would pay a second invoice.
             if (!ietfPayResult.paid && ietfPayResult.outcome !== 'unknown') {
               deps.spendTracker.unrecord(ietfChallenge.amountSats)
+              return paymentFailed(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
             }
-            if (ietfPayResult.outcome === 'unknown') {
+            if (ietfPayResult.outcome === 'unknown' || !ietfPayResult.preimage) {
+              if (ietfChallenge.paymentHash) {
+                recordUnknown({ paymentHash: ietfChallenge.paymentHash, invoice: ietfChallenge.invoice, costSats: ietfChallenge.amountSats, protocol: 'ietf-payment', method: ietfPayResult.method })
+              }
+              return paymentUnknown(ietfPayResult, ietfChallenge.amountSats, ietfChallenge.paymentHash, 'ietf-payment')
+            }
+            if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
+              if (ietfChallenge.paymentHash) {
+                recordUnknown({ paymentHash: ietfChallenge.paymentHash, invoice: ietfChallenge.invoice, costSats: ietfChallenge.amountSats, protocol: 'ietf-payment', method: ietfPayResult.method })
+              }
               return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    status: 402,
-                    protocol: 'ietf-payment',
-                    paymentState: 'unknown',
-                    costSats: ietfChallenge.amountSats,
-                    paymentHash: ietfChallenge.paymentHash,
-                    message: ietfPayResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
-                  }, null, 2),
-                }],
+                content: [{ type: 'text' as const, text: JSON.stringify({
+                  error: 'Payment was reported but the settlement preimage contains invalid characters; refusing to send it',
+                  paymentState: 'unknown',
+                  paymentHash: ietfChallenge.paymentHash,
+                  message: RECONCILE_HINT,
+                }) }],
                 isError: true as const,
               }
             }
-            if (ietfPayResult.paid && ietfPayResult.preimage) {
-              if (!HEX_RE.test(ietfPayResult.preimage) || ietfPayResult.preimage.length !== 64) {
-                return {
-                  content: [{ type: 'text' as const, text: JSON.stringify({
-                    error: 'Payment was reported but the settlement preimage contains invalid characters — refusing to send it',
-                    paymentState: 'unknown',
-                    paymentHash: ietfChallenge.paymentHash,
-                    message: 'Reconcile the original invoice before retrying.',
-                  }) }],
-                  isError: true as const,
-                }
-              }
-              const credential = deps.buildIETFCredential(ietfChallenge, ietfPayResult.preimage)
-              const retryHeaders: Record<string, string> = { ...reqHeaders }
-              retryHeaders['Authorization'] = `Payment ${credential}`
+            const credential = deps.buildIETFCredential(ietfChallenge, ietfPayResult.preimage)
+            const retryHeaders: Record<string, string> = { ...reqHeaders }
+            retryHeaders['Authorization'] = `Payment ${credential}`
 
-              const retryResponse = await doFetch(primaryUrl, {
-                method: args.method ?? 'GET',
-                headers: retryHeaders,
-                body: args.body,
-              })
+            const retryResponse = await doFetch(primaryUrl, {
+              method: args.method ?? 'GET',
+              headers: retryHeaders,
+              body: args.body,
+            })
 
-              const retryBody = await retryResponse.text()
-              return {
-                content: [{
-                  type: 'text' as const,
-                  text: JSON.stringify({
-                    status: retryResponse.status,
-                    headers: filterResponseHeaders(retryResponse.headers),
-                    body: retryBody,
-                    satsPaid: ietfChallenge.amountSats,
-                    paymentMethod: 'ietf-payment',
-                  }, null, 2),
-                }],
-              }
+            const retryBody = await retryResponse.text()
+            return {
+              content: [{
+                type: 'text' as const,
+                text: JSON.stringify({
+                  status: retryResponse.status,
+                  headers: filterResponseHeaders(retryResponse.headers),
+                  body: untrusted(retryBody, origin),
+                  satsPaid: ietfChallenge.amountSats,
+                  paymentMethod: 'ietf-payment',
+                }, null, 2),
+              }],
             }
           }
         }
-        // IETF Payment detected but not auto-paid — return challenge details
-        if (!ietfAutoPay || ietfChallenge.amountSats > deps.maxAutoPaySats) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                status: 402,
-                protocol: 'ietf-payment',
-                costSats: ietfChallenge.amountSats,
-                paymentHash: ietfChallenge.paymentHash,
-                realm: ietfChallenge.realm,
-                intent: ietfChallenge.intent,
-                message: !ietfAutoPay
-                  ? `Payment of ${ietfChallenge.amountSats} sats required (IETF Payment). autoPay disabled.`
-                  : `Payment of ${ietfChallenge.amountSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`,
-              }, null, 2),
-            }],
-          }
+        // IETF Payment detected but not auto-paid: return challenge details.
+        // Never fall through to another rail for the same request.
+        return {
+          content: [{
+            type: 'text' as const,
+            text: JSON.stringify({
+              status: 402,
+              protocol: 'ietf-payment',
+              costSats: ietfChallenge.amountSats,
+              paymentHash: ietfChallenge.paymentHash,
+              realm: ietfChallenge.realm,
+              intent: ietfChallenge.intent,
+              message: !ietfAutoPay
+                ? `Payment of ${ietfChallenge.amountSats} sats required (IETF Payment). autoPay disabled.`
+                : ietfChallenge.amountSats > autoPayCap
+                  ? `Payment of ${ietfChallenge.amountSats} sats required. Exceeds ${capLabel}.`
+                  : `Payment of ${ietfChallenge.amountSats} sats required. ${deps.spendTracker.refusal(ietfChallenge.amountSats, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.'}`,
+            }, null, 2),
+          }],
         }
-        // Fall through to L402 if spend limit reached
       }
     }
 
@@ -404,7 +515,7 @@ export async function handleFetch(
     // otherwise tryRecord inflates the spend tracker and blocks legitimate payments.
     // For human wallets, allow re-purchase even when credits are exhausted —
     // the human decides whether to pay by scanning the QR code.
-    const shouldAttemptPay = (!creditsExhausted || isHumanWallet) && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= deps.maxAutoPaySats
+    const shouldAttemptPay = (!creditsExhausted || isHumanWallet) && autoPay && challenge && decoded.costSats !== null && decoded.costSats <= autoPayCap
     // Use tryRecord as the authoritative gate — atomically checks AND records
     // the spend before payment, closing the TOCTOU gap between check and pay.
     const withinSpendLimit = shouldAttemptPay && deps.spendTracker.tryRecord(decoded.costSats!, deps.maxSpendPerMinuteSats)
@@ -482,96 +593,107 @@ export async function handleFetch(
 
       const payResult = await deps.payInvoice(challenge.invoice, { serverOrigin: origin })
 
-      // Roll back spend-limit reservation if payment failed
+      // Roll back the spend-limit reservation only for a definite failure,
+      // and report it as one rather than as a fresh challenge to pay.
       if (!payResult.paid && payResult.outcome !== 'unknown') {
         deps.spendTracker.unrecord(decoded.costSats!)
+        return paymentFailed(payResult, decoded.costSats, decoded.paymentHash, 'l402')
       }
 
-      if (payResult.outcome === 'unknown') {
+      // Unknown, or reported paid with no preimage: the money may have moved.
+      if (payResult.outcome === 'unknown' || !payResult.preimage) {
+        if (decoded.paymentHash) {
+          recordUnknown({ paymentHash: decoded.paymentHash, invoice: challenge.invoice, costSats: decoded.costSats, protocol: 'l402', method: payResult.method, macaroon: challenge.macaroon })
+        }
+        return paymentUnknown(payResult, decoded.costSats, decoded.paymentHash, 'l402')
+      }
+
+      // Validate preimage (hex) and macaroon (base64-safe) before storage
+      // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
+      if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
+        if (decoded.paymentHash) {
+          recordUnknown({ paymentHash: decoded.paymentHash, invoice: challenge.invoice, costSats: decoded.costSats, protocol: 'l402', method: payResult.method })
+        }
         return {
           content: [{
             type: 'text' as const,
             text: JSON.stringify({
-              status: 402,
+              error: 'Payment was reported but the credential contains invalid characters; refusing to store it',
               paymentState: 'unknown',
-              costSats: decoded.costSats,
               paymentHash: decoded.paymentHash,
-              message: payResult.reason ?? 'Payment may have executed. Reconcile this invoice before retrying.',
-            }, null, 2),
+              message: RECONCILE_HINT,
+            }),
           }],
           isError: true as const,
         }
       }
 
-      if (payResult.paid && payResult.preimage) {
-        // Validate preimage (hex) and macaroon (base64-safe) before storage
-        // to prevent header injection via Authorization: L402 {macaroon}:{preimage}
-        if (!HEX_RE.test(payResult.preimage) || payResult.preimage.length !== 64 || !MACAROON_RE.test(challenge.macaroon)) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: JSON.stringify({
-                error: 'Payment was reported but the credential contains invalid characters — refusing to store it',
-                paymentState: 'unknown',
-                paymentHash: decoded.paymentHash,
-                message: 'Reconcile the original invoice before retrying.',
-              }),
-            }],
-            isError: true as const,
-          }
-        }
+      // Store credential and retry
+      deps.credentialStore.set(credKey, {
+        origins: candidateOrigins,
+        macaroon: challenge.macaroon,
+        preimage: payResult.preimage,
+        paymentHash: decoded.paymentHash ?? '',
+        creditBalance: null,
+        storedAt: new Date().toISOString(),
+        lastUsed: new Date().toISOString(),
+        server: serverInfo.type === 'toll-booth' ? 'toll-booth' : null,
+      })
 
-        // Store credential and retry
-        deps.credentialStore.set(credKey, {
-          macaroon: challenge.macaroon,
-          preimage: payResult.preimage,
-          paymentHash: decoded.paymentHash ?? '',
-          creditBalance: null,
-          storedAt: new Date().toISOString(),
-          lastUsed: new Date().toISOString(),
-          server: serverInfo.type === 'toll-booth' ? 'toll-booth' : null,
-        })
+      // Retry the request with new credentials (reuse filtered headers)
+      const retryHeaders: Record<string, string> = { ...reqHeaders }
+      retryHeaders['Authorization'] = `L402 ${challenge.macaroon}:${payResult.preimage}`
 
-        // Retry the request with new credentials (reuse filtered headers)
-        const retryHeaders: Record<string, string> = { ...reqHeaders }
-        retryHeaders['Authorization'] = `L402 ${challenge.macaroon}:${payResult.preimage}`
+      const retryResponse = await doFetch(primaryUrl, {
+        method: args.method ?? 'GET',
+        headers: retryHeaders,
+        body: args.body,
+      })
 
-        const retryResponse = await doFetch(primaryUrl, {
-          method: args.method ?? 'GET',
-          headers: retryHeaders,
-          body: args.body,
-        })
+      const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
+      if (retryBalance !== null) {
+        deps.credentialStore.updateBalance(credKey, retryBalance)
+      }
 
-        const retryBalance = parseBalance(retryResponse.headers.get('x-credit-balance'))
-        if (retryBalance !== null) {
-          deps.credentialStore.updateBalance(credKey, retryBalance)
-        }
-
-        const retryBody = await retryResponse.text()
-        return {
-          content: [{
-            type: 'text' as const,
-            text: JSON.stringify({
-              status: retryResponse.status,
-              headers: filterResponseHeaders(retryResponse.headers),
-              body: retryBody,
-              creditsRemaining: retryBalance,
-              satsPaid: decoded.costSats,
-            }, null, 2),
-          }],
-        }
+      const retryBody = await retryResponse.text()
+      return {
+        content: [{
+          type: 'text' as const,
+          text: JSON.stringify({
+            status: retryResponse.status,
+            headers: filterResponseHeaders(retryResponse.headers),
+            body: untrusted(retryBody, origin),
+            creditsRemaining: retryBalance,
+            satsPaid: decoded.costSats,
+          }, null, 2),
+        }],
       }
     }
 
-    // Step 5: Return 402 challenge for agent decision
+    // Step 5: Return 402 challenge for agent decision. Cache it, so that
+    // l402-pay can pay exactly this invoice by its paymentHash.
+    if (challenge && decoded.paymentHash) {
+      deps.challengeCache.set({
+        invoice: challenge.invoice,
+        macaroon: challenge.macaroon,
+        paymentHash: decoded.paymentHash,
+        costSats: decoded.costSats,
+        expiresAt: Date.now() + decoded.expiry * 1000,
+        url: primaryUrl,
+      })
+    }
     const message = creditsExhausted
       ? `Insufficient credits for ${origin}${decoded.costSats !== null ? ` (this endpoint costs ${decoded.costSats} sats)` : ''}. Use l402-buy-credits to purchase more credits${tiers ? ' — tier options are included below' : ''}.`
+      : decoded.costSats === null
+        ? challenge
+          ? 'Payment required, but the invoice states no amount, so it cannot be checked against the spending limits and will not be paid automatically.'
+          : 'Payment required, but the response carries no payment challenge this client can read.'
       : !autoPay
         ? `Payment of ${decoded.costSats} sats required. autoPay disabled.`
-        : decoded.costSats !== null && decoded.costSats > deps.maxAutoPaySats
-          ? `Payment of ${decoded.costSats} sats required. Exceeds MAX_AUTO_PAY_SATS (${deps.maxAutoPaySats}).`
+        : decoded.costSats > autoPayCap
+          ? `Payment of ${decoded.costSats} sats required. Exceeds ${capLabel}.`
           : !withinSpendLimit
-            ? 'Per-minute spend limit reached.'
+            ? (deps.spendTracker.refusal(decoded.costSats ?? 0, deps.maxSpendPerMinuteSats) ?? 'Spend limit reached.')
             : `Payment of ${decoded.costSats} sats required.`
     return {
       content: [{
@@ -603,7 +725,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
   server.registerTool(
     'l402-fetch',
     {
-      description: 'Fetch a URL with automatic payment handling (L402 Lightning + x402 on-chain + ecash and LUD-25 bearer notes). Manages credentials, pays automatically when autoPay is true and cost is within budget, and retries. For human wallets, returns a payment page URL or QR code. For x402 services, returns payment details (receiver address, network, asset, amount) — the user pays in their wallet and provides the transaction hash. Set autoPay to true for seamless access. When a 402 is returned with tiers, present the pricing options to the user and use l402-buy-credits to purchase their chosen tier. For widget hosts, call l402-fetch-preview first to show a payment confirmation dialog before spending.',
+      description: 'Fetch a URL, paying its HTTP 402 challenge (L402, IETF Payment, Cashu or LNURLcash) when autoPay is true and the price is within MAX_AUTO_PAY_SATS, maxCostSats and the spend limits. Reuses stored credentials. Without autoPay, a 402 comes back with its price and paymentHash so the user can decide; l402-pay can then pay it. For x402 services, which this server supports only in an experimental custom format, returns the payment details for the user to pay in their own wallet. Response bodies are marked as untrusted content. With widget hosts, call l402-fetch-preview first to show the price.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),
@@ -614,6 +736,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
         autoPay: z.boolean().optional().default(false).describe('Automatically pay if within MAX_AUTO_PAY_SATS budget'),
         pubkey: z.string().max(128).optional().describe('Service pubkey from l402-search results — used to share credentials across all transport URLs for the same service'),
         txHash: z.string().regex(/^0x[0-9a-fA-F]{64}$/).optional().describe('Transaction hash from a completed x402 on-chain payment. When provided, retries the request with X-Payment header for server verification.'),
+        maxCostSats: z.number().int().nonnegative().optional().describe('Most this call may pay, in sats. Pass the price the user saw in l402-fetch-preview so a server cannot charge more than it showed. Lowers MAX_AUTO_PAY_SATS for this call; never raises it.'),
       },
     },
     async (args) => handleFetch(args, deps),

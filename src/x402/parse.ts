@@ -8,12 +8,21 @@ const CHAIN_IDS: Record<string, number> = {
   polygon: 137,
 }
 
-/** Decimal places per asset for converting human-readable amounts to smallest unit. */
+/**
+ * Decimal places for USD stablecoins, where a USD amount is also the token
+ * amount. Assets priced in anything else (ETH, for one) are left out: turning
+ * a USD figure into their smallest unit would need an exchange rate, and
+ * treating dollars as ether would ask for thousands of times the price.
+ */
 const ASSET_DECIMALS: Record<string, number> = {
   usdc: 6,
   usdt: 6,
   dai: 18,
-  eth: 18,
+}
+
+/** Whether an asset's amount can be read straight from a USD price. */
+export function isUsdStablecoin(asset: string): boolean {
+  return asset.toLowerCase() in ASSET_DECIMALS
 }
 
 export interface X402Challenge {
@@ -23,7 +32,7 @@ export interface X402Challenge {
   amountUsd: number
   /** EVM chain ID for the network (e.g. 8453 for Base). */
   chainId: number | null
-  /** Amount in smallest asset unit (e.g. 1000000 for 1 USDC). */
+  /** Amount in smallest asset unit (e.g. 1000000 for 1 USDC); null unless the asset is a USD stablecoin. */
   amountSmallestUnit: bigint | null
 }
 
@@ -38,6 +47,10 @@ export function isX402Challenge(headers: Headers): boolean {
 /**
  * Parses an x402 challenge from the response body.
  * Expected shape: `{ x402: { receiver, network, asset, amount_usd } }`.
+ *
+ * Experimental: this is a custom format, not the x402 specification, whose
+ * servers send a base64 `PAYMENT-REQUIRED` header. Real x402 services are not
+ * understood here.
  */
 export function parseX402Challenge(body: unknown): X402Challenge | null {
   if (body === null || typeof body !== 'object') return null
@@ -79,11 +92,13 @@ export function parseX402Challenge(body: unknown): X402Challenge | null {
   }
 }
 
-/** Builds an EIP-681 payment deeplink for wallet apps. */
-export function buildPaymentDeeplink(challenge: X402Challenge): string | null {
-  if (!challenge.chainId) return null
-
-  // For ERC-20 tokens (not native ETH), use the transfer function call format
-  // For now, return a simple ethereum: URI that most wallets understand
-  return `ethereum:${challenge.receiver}@${challenge.chainId}`
+/**
+ * Formerly built an EIP-681 link, but one with no token contract or amount
+ * sends the wrong asset or nothing at all. Kept so existing imports resolve.
+ *
+ * @deprecated Returns null. A correct link needs the token contract address,
+ * which the challenge does not carry.
+ */
+export function buildPaymentDeeplink(_challenge: X402Challenge): string | null {
+  return null
 }

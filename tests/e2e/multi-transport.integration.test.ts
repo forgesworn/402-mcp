@@ -35,7 +35,7 @@ describe('multi-transport end-to-end', () => {
   it('discovers service with multiple urls, selects best transport, falls back on failure', async () => {
     const clearnetUrl = 'https://service.example.com/api'
     const onionUrl = 'https://exampleonionaddress.onion/api'
-    const hnsUrl = 'https://service.satoshipay/api'
+    const hnsUrl = 'https://service.hns/api'
 
     // Step 1: Build a kind 31402 event with 3 url tags (clearnet, .onion, HNS)
     const event = buildAnnounceEvent([clearnetUrl, onionUrl, hnsUrl])

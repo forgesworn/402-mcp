@@ -5,6 +5,11 @@ export interface ConfigState {
   cashuConfigured: boolean
   cashuBalanceSats: number
   maxAutoPaySats: number
+  /** Rolling 60-second cap; 0 blocks auto-pay. */
+  maxSpendPerMinuteSats?: number
+  /** Rolling 24-hour cap, persisted; 0 blocks auto-pay. */
+  maxSpendPerDaySats?: number
+  spentLast24HoursSats?: number
   credentialCount: number
 }
 

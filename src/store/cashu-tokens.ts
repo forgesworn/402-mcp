@@ -9,8 +9,21 @@ export interface StoredToken {
   addedAt: string
 }
 
+/**
+ * Proofs handed to a mint for a melt whose outcome is not yet known. They are
+ * neither spendable nor lost: the mint may still pay the invoice with them, or
+ * may yet refuse and leave them valid. Keeping them out of the spendable pool
+ * stops them being offered again while a reconcile can still restore them.
+ */
+export interface ReservedToken extends StoredToken {
+  paymentHash: string
+  quoteId: string
+  reservedAt: string
+}
+
 interface TokenStoreData {
   tokens: StoredToken[]
+  reserved?: ReservedToken[]
 }
 
 /** Encrypted persistent store for Cashu ecash tokens. */
@@ -55,6 +68,39 @@ export class CashuTokenStore {
     this.save()
   }
 
+  /** Holds proofs from an unresolved melt outside the spendable pool. */
+  reserve(token: ReservedToken): void {
+    this.data.reserved = [...(this.data.reserved ?? []), token]
+    this.save()
+  }
+
+  listReserved(): ReservedToken[] {
+    return [...(this.data.reserved ?? [])]
+  }
+
+  getReserved(paymentHash: string): ReservedToken | undefined {
+    return this.data.reserved?.find(t => t.paymentHash === paymentHash)
+  }
+
+  /** The melt definitely failed: the reserved proofs are spendable again. */
+  releaseReserved(paymentHash: string): boolean {
+    const found = this.getReserved(paymentHash)
+    if (!found) return false
+    this.data.reserved = (this.data.reserved ?? []).filter(t => t !== found)
+    this.data.tokens.push({ token: found.token, mint: found.mint, amountSats: found.amountSats, addedAt: found.addedAt })
+    this.save()
+    return true
+  }
+
+  /** The melt settled: the reserved proofs are spent and can be forgotten. */
+  dropReserved(paymentHash: string): boolean {
+    const before = this.data.reserved?.length ?? 0
+    this.data.reserved = (this.data.reserved ?? []).filter(t => t.paymentHash !== paymentHash)
+    if (this.data.reserved.length === before) return false
+    this.save()
+    return true
+  }
+
   /** Returns all tokens from a specific mint (URL normalised — trailing slashes ignored). */
   listByMint(mintUrl: string): StoredToken[] {
     const normalised = mintUrl.replace(/\/+$/, '')
@@ -84,6 +130,7 @@ export class CashuTokenStore {
       } else {
         this.data = { tokens: [] }
       }
+      if (this.data.reserved !== undefined && !Array.isArray(this.data.reserved)) delete this.data.reserved
     } catch { this.data = { tokens: [] } }
   }
 

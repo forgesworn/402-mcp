@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { handleFetch, type FetchDeps } from '../../src/tools/fetch.js'
+import { unwrapUntrusted } from '../../src/tools/untrusted.js'
 import { SpendTracker } from '../../src/spend-tracker.js'
 import { ChallengeCache } from '../../src/l402/challenge-cache.js'
 
@@ -30,6 +31,7 @@ function makeDeps(overrides: Partial<FetchDeps> = {}): FetchDeps {
     isIETFPayment: vi.fn().mockReturnValue(false),
     parseIETFPayment: vi.fn().mockReturnValue(null),
     buildIETFCredential: vi.fn().mockReturnValue(''),
+    pendingPayments: { add: vi.fn(), unresolvedFor: vi.fn().mockReturnValue([]) },
     ...overrides,
   }
 }
@@ -55,7 +57,7 @@ describe('handleFetch', () => {
     const parsed = JSON.parse(result.content[0].text)
 
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('hello world')
+    expect(unwrapUntrusted(parsed.body)).toBe('hello world')
     expect(parsed.satsPaid).toBe(0)
   })
 
@@ -112,7 +114,7 @@ describe('handleFetch', () => {
     const parsed = JSON.parse(result.content[0].text)
 
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('paid content')
+    expect(unwrapUntrusted(parsed.body)).toBe('paid content')
     expect(parsed.satsPaid).toBe(50)
     expect(parsed.creditsRemaining).toBe(950)
     expect(deps.credentialStore.set).toHaveBeenCalledWith('https://api.example.com', expect.objectContaining({
@@ -506,7 +508,7 @@ describe('handleFetch', () => {
 
       const parsed = JSON.parse(result.content[0].text)
       expect(parsed.status).toBe(200)
-      expect(parsed.body).toBe('from transport')
+      expect(unwrapUntrusted(parsed.body)).toBe('from transport')
     })
 
     it('uses fetchFn (not transportFetch) when only a single URL is provided', async () => {
@@ -565,7 +567,6 @@ describe('handleFetch', () => {
         asset: 'USDC',
         amountUsd: 1,
         chainId: 8453,
-        paymentDeeplink: 'ethereum:0x1234567890abcdef1234567890abcdef12345678@8453',
         message: 'Payment required: $1 USDC on base.',
       }
 
@@ -594,7 +595,6 @@ describe('handleFetch', () => {
       expect(parsed.network).toBe('base')
       expect(parsed.asset).toBe('USDC')
       expect(parsed.amountUsd).toBe(1)
-      expect(parsed.paymentDeeplink).toContain('ethereum:')
       expect(parsed.message).toContain('Payment required')
 
       // Should NOT attempt L402 payment
@@ -659,7 +659,7 @@ describe('handleFetch', () => {
 
       const parsed = JSON.parse(result.content[0].text)
       expect(parsed.status).toBe(200)
-      expect(parsed.body).toBe('access granted')
+      expect(unwrapUntrusted(parsed.body)).toBe('access granted')
     })
 
     it('does not set X-Payment header when txHash is absent', async () => {
@@ -704,7 +704,7 @@ describe('handleFetch lnurlcash rail', () => {
     expect(fetchMock.mock.calls[1][1].headers['X-LNURLcash']).toBe(NOTE)
     const parsed = JSON.parse(result.content[0].text)
     expect(parsed.status).toBe(200)
-    expect(parsed.body).toBe('the goods')
+    expect(unwrapUntrusted(parsed.body)).toBe('the goods')
     expect(parsed.satsPaid).toBe(5)
     expect(parsed.paymentMethod).toBe('lnurlcash')
   })
@@ -822,5 +822,40 @@ describe('handleFetch lnurlcash rail', () => {
     await handleFetch({ url: 'https://api.example.com/data', autoPay: true }, deps)
 
     expect(payLnurlcash).not.toHaveBeenCalled()
+  })
+
+  it('does not pay more than maxCostSats even when MAX_AUTO_PAY_SATS allows it', async () => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {
+        'www-authenticate': 'L402 macaroon="mac1", invoice="lnbc500n1test"',
+      }, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue({ macaroon: 'mac1', invoice: 'lnbc500n1test' }),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: 50, paymentHash: 'hash1', expiry: 3600 }),
+      payInvoice: vi.fn().mockResolvedValue({ paid: true, preimage: 'a'.repeat(64), method: 'nwc' }),
+      maxAutoPaySats: 100,
+    })
+
+    const result = await handleFetch({ url: 'https://api.example.com/data', autoPay: true, maxCostSats: 40 }, deps)
+    const parsed = JSON.parse(result.content[0].text)
+
+    expect(deps.payInvoice).not.toHaveBeenCalled()
+    expect(parsed.status).toBe(402)
+    expect(parsed.message).toContain('maxCostSats (40)')
+  })
+
+  it.each([
+    ['no readable challenge', null, /no payment challenge this client can read/],
+    ['an amountless invoice', { macaroon: 'mac1', invoice: 'lnbc1test' }, /states no amount/],
+  ])('never says "null sats" for a 402 with %s', async (_label, challenge, message) => {
+    const deps = makeDeps({
+      fetchFn: vi.fn().mockResolvedValue(mockResponse(402, {}, '{}')) as unknown as typeof fetch,
+      parseL402: vi.fn().mockReturnValue(challenge),
+      decodeBolt11: vi.fn().mockReturnValue({ costSats: null, paymentHash: null, expiry: 3600 }),
+    })
+    for (const autoPay of [false, true]) {
+      const parsed = JSON.parse((await handleFetch({ url: 'https://api.example.com/data', autoPay }, deps)).content[0].text)
+      expect(parsed.message).not.toContain('null')
+      expect(parsed.message).toMatch(message)
+    }
   })
 })

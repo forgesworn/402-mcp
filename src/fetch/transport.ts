@@ -20,25 +20,48 @@ const COMMON_TLDS = new Set([
   'ly', 'gg', 'gg', 'sh', 'io',
 ])
 
+/**
+ * TLDs that are Handshake names and not ICANN ones. A TLD merely missing
+ * from COMMON_TLDS is far more often an ICANN TLD this list does not know
+ * (.pub, .fyi, and hundreds more) than a Handshake one.
+ */
+const KNOWN_HNS_TLDS = new Set(['hns'])
+
 type TransportType = 'onion' | 'hns' | 'https' | 'http'
 
-function classifyUrl(url: string): TransportType {
+/** `guessed` marks an HNS classification made only because the TLD is unfamiliar. */
+function classifyUrl(url: string): { type: TransportType; guessed: boolean } {
   let parsed: URL
   try {
     parsed = new URL(url)
   } catch {
-    return 'http'
+    return { type: 'http', guessed: false }
   }
 
   const hostname = parsed.hostname.toLowerCase()
 
-  if (hostname.endsWith('.onion')) return 'onion'
+  if (hostname.endsWith('.onion')) return { type: 'onion', guessed: false }
 
   const tld = hostname.split('.').pop() ?? ''
-  if (!COMMON_TLDS.has(tld)) return 'hns'
+  if (KNOWN_HNS_TLDS.has(tld)) return { type: 'hns', guessed: false }
+  if (!COMMON_TLDS.has(tld)) return { type: 'hns', guessed: true }
 
-  if (parsed.protocol === 'https:') return 'https'
-  return 'http'
+  if (parsed.protocol === 'https:') return { type: 'https', guessed: false }
+  return { type: 'http', guessed: false }
+}
+
+/**
+ * Where a URL sorts under `preference`. A guessed HNS name sorts just after
+ * both the hns and https tiers, so an unfamiliar ICANN TLD never jumps ahead
+ * of a service's ordinary HTTPS endpoint.
+ */
+function rank(url: string, preference: string[]): number {
+  const { type, guessed } = classifyUrl(url)
+  const idx = preference.indexOf(type)
+  if (idx === -1) return Infinity
+  if (!guessed) return idx
+  const httpsIdx = preference.indexOf('https')
+  return Math.max(idx, httpsIdx) + 0.5
 }
 
 /**
@@ -46,6 +69,7 @@ function classifyUrl(url: string): TransportType {
  *
  * - .onion URLs are filtered out when `hasTorProxy` is false
  * - URLs are sorted by `preference` order (lower index = higher priority)
+ * - A TLD that is neither familiar nor known to be Handshake sorts after https
  * - URLs whose transport type is not in the preference list are placed last
  * - Relative order is preserved within the same tier (stable sort)
  */
@@ -56,20 +80,17 @@ export function selectTransports(
 ): string[] {
   // Filter: remove .onion URLs when no Tor proxy is available
   const filtered = urls.filter(url => {
-    const type = classifyUrl(url)
+    const { type } = classifyUrl(url)
     if (type === 'onion' && !capabilities.hasTorProxy) return false
     return true
   })
 
-  // Sort by preference index (stable — Array.prototype.sort is stable in Node 18+)
+  // Sort by preference rank (stable; Array.prototype.sort is stable in Node 18+).
+  // Not in the preference list → Infinity, placed at the end.
   return filtered.slice().sort((a, b) => {
-    const typeA = classifyUrl(a)
-    const typeB = classifyUrl(b)
-    const idxA = preference.indexOf(typeA)
-    const idxB = preference.indexOf(typeB)
-    // Not in preference list → place at end (index = Infinity)
-    const posA = idxA === -1 ? Infinity : idxA
-    const posB = idxB === -1 ? Infinity : idxB
+    const posA = rank(a, preference)
+    const posB = rank(b, preference)
+    if (posA === posB) return 0
     return posA - posB
   })
 }

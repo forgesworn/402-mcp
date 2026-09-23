@@ -57,6 +57,13 @@ describe('config validation', () => {
     expect(() => loadConfig()).toThrow('FETCH_MAX_RETRIES')
   })
 
+  it('defaults MAX_SPEND_PER_DAY_SATS to 5000 and rejects a negative one', async () => {
+    const { loadConfig } = await import('../src/config.js')
+    expect(loadConfig().maxSpendPerDaySats).toBe(5000)
+    vi.stubEnv('MAX_SPEND_PER_DAY_SATS', '-1')
+    expect(() => loadConfig()).toThrow('MAX_SPEND_PER_DAY_SATS')
+  })
+
   it('accepts valid defaults (no env vars set)', async () => {
     const { loadConfig } = await import('../src/config.js')
     expect(() => loadConfig()).not.toThrow()
@@ -102,10 +109,65 @@ describe('config validation', () => {
     expect(loadConfig().transport).toBe('stdio')
   })
 
-  it('accepts TRANSPORT=http', async () => {
-    vi.stubEnv('TRANSPORT', 'http')
-    const { loadConfig } = await import('../src/config.js')
-    expect(loadConfig().transport).toBe('http')
+  describe('HTTP transport', () => {
+    let directory: string
+    let tokenFile: string
+    const TOKEN = 'ab'.repeat(32)
+
+    beforeEach(() => {
+      directory = mkdtempSync(join(tmpdir(), '402-mcp-http-'))
+      tokenFile = join(directory, 'http.token')
+      writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 })
+    })
+
+    afterEach(() => {
+      rmSync(directory, { recursive: true, force: true })
+    })
+
+    it('accepts TRANSPORT=http with a private token file', async () => {
+      vi.stubEnv('TRANSPORT', 'http')
+      vi.stubEnv('HTTP_AUTH_TOKEN_FILE', tokenFile)
+      const { loadConfig } = await import('../src/config.js')
+      const config = loadConfig()
+      expect(config.transport).toBe('http')
+      expect(config.httpAuthToken).toBe(TOKEN)
+      expect(process.env.HTTP_AUTH_TOKEN_FILE).toBeUndefined()
+    })
+
+    it('refuses to start without a token file', async () => {
+      vi.stubEnv('TRANSPORT', 'http')
+      const { loadConfig } = await import('../src/config.js')
+      expect(() => loadConfig()).toThrow('HTTP_AUTH_TOKEN_FILE')
+    })
+
+    it('refuses a token in the environment, a short token and a world-readable file', async () => {
+      const { loadConfig } = await import('../src/config.js')
+      vi.stubEnv('TRANSPORT', 'http')
+      vi.stubEnv('HTTP_AUTH_TOKEN', TOKEN)
+      expect(() => loadConfig()).toThrow('HTTP_AUTH_TOKEN is disabled')
+
+      writeFileSync(tokenFile, 'short', { mode: 0o600 })
+      vi.stubEnv('HTTP_AUTH_TOKEN_FILE', tokenFile)
+      expect(() => loadConfig()).toThrow('at least 32 characters')
+
+      if (process.platform !== 'win32') {
+        writeFileSync(tokenFile, TOKEN, { mode: 0o600 })
+        chmodSync(tokenFile, 0o644)
+        vi.stubEnv('HTTP_AUTH_TOKEN_FILE', tokenFile)
+        expect(() => loadConfig()).toThrow('chmod 600')
+      }
+    })
+
+    it('warns on non-loopback BIND_ADDRESS', async () => {
+      vi.stubEnv('TRANSPORT', 'http')
+      vi.stubEnv('HTTP_AUTH_TOKEN_FILE', tokenFile)
+      vi.stubEnv('BIND_ADDRESS', '0.0.0.0')
+      const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const { loadConfig } = await import('../src/config.js')
+      loadConfig()
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('reachable from the network'))
+      warnSpy.mockRestore()
+    })
   })
 
   it('throws on invalid TRANSPORT value', async () => {
@@ -170,18 +232,6 @@ describe('config validation', () => {
     const { loadConfig } = await import('../src/config.js')
     expect(() => loadConfig()).toThrow('CASHU_TOKENS')
     expect(() => loadConfig()).toThrow('home directory')
-  })
-
-  it('warns on non-loopback BIND_ADDRESS with HTTP transport', async () => {
-    vi.stubEnv('TRANSPORT', 'http')
-    vi.stubEnv('BIND_ADDRESS', '0.0.0.0')
-    const warnSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { loadConfig } = await import('../src/config.js')
-    loadConfig()
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('network-accessible without authentication'),
-    )
-    warnSpy.mockRestore()
   })
 
   it('throws when NODE_TLS_REJECT_UNAUTHORIZED=0 without opt-in', async () => {

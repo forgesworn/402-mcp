@@ -1,8 +1,8 @@
 # 402-mcp
 
-> 402-mcp is an MCP server that gives AI agents economic agency — the ability to discover, pay for, and consume any L402 or x402 payment-gated API without human registration, API keys, or middlemen. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits.
+> 402-mcp is an MCP server that gives AI agents economic agency: the ability to discover, pay for, and consume L402 and other Lightning or ecash payment-gated APIs without human registration, API keys, or middlemen. It speaks the L402 protocol natively, carries its own payment methods, and makes autonomous purchasing decisions within human-set safety limits.
 
-402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Three payer methods are supported — NWC (Nostr Wallet Connect), Cashu ecash, and human-in-the-loop — tried in that priority order so the agent picks the most autonomous option available.
+402-mcp is protocol-loyal: it works with any L402-compliant server (toll-booth, Aperture, or any conforming implementation), not just a specific vendor's stack. Bonus features activate automatically when talking to a toll-booth server. Four payer methods are supported (NWC (Nostr Wallet Connect), Cashu ecash, LNURLcash bearer notes, and human-in-the-loop), tried in that priority order so the agent picks the most autonomous option available.
 
 Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements — a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure — .onion endpoints need `TOR_PROXY` or `SOCKS_PROXY`; clearnet and HNS need no configuration.
 
@@ -14,11 +14,14 @@ Run instantly with no configuration required:
 npx 402-mcp
 ```
 
-For HTTP transport (useful for remote agents or multi-client setups):
+Use stdio wherever the client can start a local process. The HTTP transport can spend from your wallet, so it refuses to start without a bearer token, and only answers requests whose `Host` header it recognises:
 
 ```bash
-TRANSPORT=http npx 402-mcp
+openssl rand -hex 32 > ~/.402-mcp/http.token && chmod 600 ~/.402-mcp/http.token
+TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token npx 402-mcp
 ```
+
+Clients send `Authorization: Bearer <token>`. It listens on `127.0.0.1` only by default. To reach it from another machine, put it behind a TLS reverse proxy and add the proxy's host name to `HTTP_ALLOWED_HOSTS`; never expose it directly.
 
 ### Claude Desktop / Cursor
 
@@ -45,25 +48,29 @@ Add to your MCP configuration:
 |----------|---------|-------------|
 | `NWC_URI_FILE` | — | Private 0600 file containing the Nostr Wallet Connect bearer URI |
 | `CASHU_TOKENS` | — | Path to Cashu token store file |
-| `MAX_AUTO_PAY_SATS` | 1000 | Safety cap; payments above this require human confirmation |
-| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Rolling 60-second spend cap across all payments |
+| `LNURLCASH_NOTES` | - | Path to LNURLcash (LUD-25) bearer note store file |
+| `MAX_AUTO_PAY_SATS` | 1000 | Most a single automatic payment may cost. Dearer challenges are not paid; they go back to the agent. `0` disables auto-pay |
+| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Automatic spend allowed in any rolling 60 seconds. `0` blocks all auto-pay |
+| `MAX_SPEND_PER_DAY_SATS` | 5000 | Automatic spend allowed in any rolling 24 hours, persisted across restarts. `0` blocks all auto-pay |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
+| `HTTP_AUTH_TOKEN_FILE` | - | Private 0600 file holding the bearer token; required when `TRANSPORT=http` |
+| `HTTP_ALLOWED_HOSTS` | - | Extra `Host` header values the HTTP transport accepts (comma-separated) |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services |
 | `TOR_PROXY` | — | SOCKS5 proxy for .onion requests only (e.g. `socks5h://127.0.0.1:9050`) |
 | `SOCKS_PROXY` | — | SOCKS5 proxy for every paid-API request, names resolved by the proxy. Set this or `TOR_PROXY`, not both |
-| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS gateway for Handshake name resolution |
+| `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS resolver for Handshake names; any host name ordinary DNS cannot find is looked up here |
 
 ## Key Concepts
 
 - **L402** — an HTTP payment protocol where a server responds to unauthenticated requests with HTTP 402, a Lightning invoice, and a macaroon. The client pays the invoice, then sends `Authorization: L402 <macaroon>:<preimage>` to access the API.
 - **Economic agency** — the agent discovers a service, reads the price, pays the invoice, and retrieves the data, all within a single tool call. No human registration required.
-- **Safety cap** — `MAX_AUTO_PAY_SATS` sets the maximum any single autonomous payment can be. Above this limit, the agent asks for human approval. A rolling 60-second spend cap (`MAX_SPEND_PER_MINUTE_SATS`) prevents runaway spending.
+- **Spending limits**: `MAX_AUTO_PAY_SATS` is the most any single automatic payment can be; a dearer challenge is returned to the agent unpaid. Rolling 60-second and persisted 24-hour caps (`MAX_SPEND_PER_MINUTE_SATS`, `MAX_SPEND_PER_DAY_SATS`) stop runaway spending. The budget on the NWC connection itself is the real hard limit.
 - **Credential store** — paid macaroons are persisted locally and encrypted with AES-256-GCM. Subsequent requests to the same server reuse credentials rather than paying again.
 - **Credit balance** — many L402 servers (including toll-booth) grant a credit balance after payment. 402-mcp tracks and caches that balance so the agent can reason about remaining capacity.
 - **Service discovery** — agents can search for L402 services on Nostr relays by querying kind 31402 announcements, finding paid APIs by topic, capability, or payment method.
-- **Multi-transport** — discovered services may advertise multiple endpoints (HTTPS, Tor .onion, Handshake HNS). The agent selects the best transport by preference (default: onion > hns > https > http), filters by capability (e.g. .onion requires a Tor proxy), and falls back automatically on connection failure. Credentials are keyed by service pubkey, not URL origin, so a macaroon obtained via one transport works on any other.
+- **Multi-transport**: discovered services may advertise multiple endpoints (HTTPS, Tor .onion, Handshake HNS). The agent selects the best transport by preference (default: onion > hns > https > http), filters by capability (e.g. .onion requires a Tor proxy), and falls back automatically on connection failure. Credentials are keyed by service pubkey and bound to the transport origins they were bought through, so a macaroon obtained via one advertised transport works on the others, and is never sent to an origin it was not bought from.
 
 ## Core L402 Tools
 
@@ -77,13 +84,21 @@ Introspect the agent's payment capabilities and current configuration. Returns w
 
 Probe an endpoint to discover its pricing without making a payment. Returns the invoice amount in satoshis, the macaroon challenge, and whether the server is a toll-booth instance (which enables extension tools). Use this before committing to a purchase so the agent can reason about value.
 
+### `l402-fetch-preview`
+
+Show what an endpoint (or each of a service's transport URLs) costs without paying: protocol, price and which wallet would pay. Cannot spend by construction. Widget hosts render it as a payment confirmation dialog.
+
 ### `l402-fetch`
 
-Make an HTTP request to an L402-protected endpoint. Handles the full payment flow automatically: detects 402 responses, pays the invoice if the amount is within the `MAX_AUTO_PAY_SATS` budget and the rolling spend cap, stores the credential, and retries the request. Returns the response body on success. This is the primary tool for consuming L402 APIs.
+Make an HTTP request to an L402-protected endpoint. With `autoPay: true` it detects the 402, pays if the price is within `MAX_AUTO_PAY_SATS`, the optional per-call `maxCostSats` and the rolling spend caps, stores the credential, and retries. Without `autoPay` the challenge comes back with its price and `paymentHash`. Response bodies are wrapped in UNTRUSTED CONTENT markers. This is the primary tool for consuming L402 APIs.
 
 ### `l402-pay`
 
-Pay a specific Lightning invoice directly. Tries payment methods in priority order: NWC, Cashu, human-in-the-loop. Use this when you have an invoice from a source other than `l402-fetch`, or when you want explicit control over the payment step.
+Pay a challenge that `l402-fetch` or `l402-discover` returned, by its `paymentHash`, using the wallet priority NWC, Cashu, LNURLcash, human. An invoice that did not come from such a challenge is paid only if the human approves it in the client (MCP elicitation); otherwise it is refused.
+
+### `l402-reconcile`
+
+List payments whose outcome is unknown, or resolve one by asking the wallet that made it (NWC `lookup_invoice`, the Cashu mint, or the LNURLcash verify URL). While any is unresolved for a service, auto-pay to that service is paused.
 
 ### `l402-credentials`
 
@@ -95,7 +110,11 @@ Check the cached credit balance for a specific server URL. Returns the number of
 
 ### `l402-search`
 
-Search for L402 services on Nostr relays. Queries kind 31402 announcement events and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402-fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront — a decentralised alternative to API directories.
+Search for L402 services on Nostr relays. Queries kind 31402 announcement events (topic and payment-method filters are sent to the relays; query text is matched locally) and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402-fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront: a decentralised alternative to API directories. Announcement text is wrapped in UNTRUSTED CONTENT markers.
+
+## Widget Tools
+
+For hosts that support MCP Apps: `l402-service-directory` opens a searchable directory of services from `l402-search`, and `l402-wallet-dashboard` shows wallet status, limits and stored credentials. `l402-fetch-preview` has a payment confirmation widget.
 
 ## toll-booth Extension Tools
 
@@ -111,30 +130,36 @@ Redeem Cashu ecash tokens directly with the toll-booth server, bypassing the Lig
 
 ## Payment Methods
 
-Three payer methods are tried in priority order:
+Four payer methods are tried in priority order:
 
 1. **NWC (Nostr Wallet Connect)** — fully autonomous. The agent pays invoices directly from a connected Lightning wallet via the NWC protocol. Configure with `NWC_URI_FILE`; raw bearer values are refused. No human interaction required.
 
 2. **Cashu** — fully autonomous. The agent melts ecash tokens to pay invoices. Configure with `CASHU_TOKENS` pointing to a token store file. No Lightning node required on the agent side.
 
-3. **Human-in-the-loop** — fallback when no autonomous payment method is configured or when a payment exceeds the `MAX_AUTO_PAY_SATS` cap. The agent presents a payment QR code and polls for settlement. Control returns to the agent once the human has paid.
+3. **LNURLcash**: fully autonomous. The agent melts LUD-25 bearer notes to pay invoices. Configure with `LNURLCASH_NOTES`.
+
+4. **Human-in-the-loop**: used when no autonomous payment method is configured. The agent presents a payment QR code or payment page, and `l402-pay` confirms settlement where the server reports it (toll-booth does). It does not take over above `MAX_AUTO_PAY_SATS`: a dearer challenge is simply returned to the agent unpaid.
 
 The agent can override the payment method per-call, or you can configure only the methods you want available.
 
-`l402-fetch` handles five HTTP 402 challenge variants transparently:
+`l402-fetch` handles four HTTP 402 challenge variants, plus an experimental x402 format:
 
 - **L402** (`WWW-Authenticate: L402`) — the primary protocol; Lightning invoice paid via the wallet stack.
 - **IETF Payment** (`WWW-Authenticate: Payment`, `draft-ryan-httpauth-payment-01`) — alternative Lightning path; builds a base64url credential after payment.
 - **LNURLcash** (`X-LNURLcash: lnurlcashreq1…`, LUD-25): autonomous bearer-note payment; hands over a note worth exactly the price, splitting one at the mint if needed. Tried first: no Lightning hop and no swap at the mint.
 - **xCashu** (`X-Cashu: creqA…`, NUT-18) — autonomous ecash payment; selects and sends the exact token amount without a Lightning round-trip.
-- **x402** (`X-Payment-Required: x402`) — on-chain EVM payment; surfaces an EIP-681 deeplink to the human (no autonomous settlement).
+- **x402** (`X-Payment-Required: x402`), experimental: a custom format, not the x402 specification (whose servers send a base64 `PAYMENT-REQUIRED` header), so real x402 services are not supported. Payment details are shown to the human, who pays from their own wallet; nothing is paid autonomously.
 
 ## Safety Model
 
-Two safety primitives protect against runaway spending:
+These limits apply to every automatic payment:
 
-1. **`MAX_AUTO_PAY_SATS`** — caps any single autonomous payment. Above this threshold, the agent must ask for human approval.
-2. **`MAX_SPEND_PER_MINUTE_SATS`** — rolling 60-second window cap across all payments. Prevents rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
+1. **`MAX_AUTO_PAY_SATS`** caps any single payment. A dearer challenge is returned to the agent unpaid; whether the agent then asks the human is up to the agent.
+2. **`maxCostSats`** on `l402-fetch` lowers that cap for one call, so a price shown in a preview is binding.
+3. **`MAX_SPEND_PER_MINUTE_SATS`** and **`MAX_SPEND_PER_DAY_SATS`** cap total spend over rolling 60-second and 24-hour windows; the daily window survives restarts. `0` blocks auto-pay.
+4. **Unknown outcomes** pause auto-pay to that service until `l402-reconcile` resolves them.
+
+All of these are enforced in software by this process. The budget set on the NWC connection in the wallet is the real hard limit.
 
 The human stays in control of three things: the safety caps, which payment methods are available, and credential visibility. The agent operates within those boundaries, not around them.
 
@@ -142,9 +167,11 @@ The human stays in control of three things: the safety caps, which payment metho
 
 - **SSRF protection** — all outbound requests pass through an SSRF guard that blocks private/internal IP ranges by default. Handshake names are resolved via DNS-over-HTTPS with the resolved IP validated against blocked ranges. .onion addresses bypass DNS and route through the configured SOCKS proxy. With `SOCKS_PROXY`, no host name is resolved locally; IP literals and local names are still refused. Wallet and relay traffic is not proxied. Set `SSRF_ALLOW_PRIVATE=true` only for local development.
 - **Credential encryption** — stored credentials are encrypted with AES-256-GCM. The encryption key is stored in the OS keychain when available, falling back to a file-based key with a warning.
-- **Settlement proof** — NWC responses are authenticated with NIP-44 v2 and signed events, then the returned preimage is verified against the challenged BOLT-11 payment hash before storage.
+- **Settlement proof**: NWC responses are authenticated with NIP-44 v2 and signed events. NWC and Cashu preimages are verified against the invoice's payment hash; a payment reported without a matching preimage is treated as an unknown outcome, not as unpaid.
+- **Prompt-injection hardening**: third-party text is marked as untrusted, and `l402-pay` only pays invoices from challenges this process received unless the human approves.
+- **Credential binding**: stored credentials are sent only to the origins they were obtained from.
 - **Spend tracking** — atomic `tryRecord()` prevents TOCTOU race conditions in concurrent spend checks.
-- **HTTP transport hardening** — rate limiting (100 req/60s per IP), security headers (CSP, X-Frame-Options, nosniff), and loopback-only binding by default.
+- **HTTP transport hardening**: bearer token required (`HTTP_AUTH_TOKEN_FILE`), DNS rebinding protection through a `Host` allowlist, rate limiting (100 req/60s per IP), security headers (CSP, X-Frame-Options, nosniff), and loopback-only binding by default.
 
 ## Ecosystem
 

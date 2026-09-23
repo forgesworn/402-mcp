@@ -1,6 +1,6 @@
 # CLAUDE.md - 402-mcp
 
-L402 + x402 client MCP - AI agents discover, pay for, and consume any payment-gated API autonomously.
+L402 client MCP: AI agents discover, pay for, and consume Lightning and ecash payment-gated APIs within human-set limits. x402 support is experimental and uses a custom format, not the x402 specification.
 
 ## Commands
 
@@ -16,8 +16,8 @@ npm run typecheck   # tsc --noEmit
 # Stdio transport (default — used by MCP clients like Claude Desktop)
 node build/index.js
 
-# HTTP transport (for network access, e.g. behind a reverse proxy)
-TRANSPORT=http PORT=3402 node build/index.js
+# HTTP transport (needs a bearer token file; stateless, one server per request)
+TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token PORT=3402 node build/index.js
 ```
 
 Key environment variables:
@@ -27,11 +27,14 @@ Key environment variables:
 | `NWC_URI_FILE` | — | Absolute path to a private 0600 file containing the NWC bearer URI |
 | `CASHU_TOKENS` | — | Path to Cashu token store file |
 | `MAX_AUTO_PAY_SATS` | `1000` | Auto-pay threshold per request |
-| `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap |
+| `MAX_SPEND_PER_MINUTE_SATS` | `10000` | Rolling 60s spend cap (`0` blocks auto-pay) |
+| `MAX_SPEND_PER_DAY_SATS` | `5000` | Rolling 24h spend cap, persisted in `~/.402-mcp/spend-ledger.json` (`0` blocks auto-pay) |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Path to credential store (must be within home dir) |
 | `TRANSPORT` | `stdio` | `stdio` or `http` |
 | `PORT` | `3402` | HTTP transport listen port |
 | `BIND_ADDRESS` | `127.0.0.1` | HTTP transport bind address |
+| `HTTP_AUTH_TOKEN_FILE` | - | Private 0600 bearer token file; required for `TRANSPORT=http` |
+| `HTTP_ALLOWED_HOSTS` | - | Extra Host header values for DNS rebinding protection |
 | `CORS_ORIGIN` | `false` | CORS origin for HTTP transport (`*` or specific origin) |
 | `HUMAN_PAY_TIMEOUT_S` | `600` | Timeout for human wallet QR payment (seconds) |
 | `HUMAN_PAY_POLL_S` | `3` | Poll interval for human wallet payment (seconds) |
@@ -52,7 +55,7 @@ src/
   wallet/               # Payment implementations (NWC, Cashu melt, human)
   store/                # Persistent JSON stores (credentials, Cashu tokens)
   l402/                 # L402 protocol utilities (parse, detect, cache, bolt11)
-  x402/                 # x402 protocol utilities (parse, payment deeplinks)
+  x402/                 # Experimental custom x402 format (parse, payment details)
 tests/                  # Tests mirror src/ structure (tests/tools/, tests/wallet/, etc.)
   e2e/                  # Integration tests against in-process toll-booth
 ```

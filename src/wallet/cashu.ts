@@ -1,7 +1,20 @@
-import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
+import { tryDecodeBolt11, verifyPreimage } from 'farrier-kit'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
 import type { CashuTokenStore } from '../store/cashu-tokens.js'
 
+type Proof = { id: string; amount: number; secret: string; C: string }
+
+const UNKNOWN_REASON = 'Call l402-reconcile with this payment hash before paying this service again.'
+
 async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _options?: PayInvoiceOptions): Promise<PaymentResult> {
+  // The payment hash is what proves settlement later, so an invoice that
+  // cannot be decoded is refused before any token leaves the store.
+  const invoiceDecoded = tryDecodeBolt11(invoice)
+  if (!invoiceDecoded) {
+    return { paid: false, method: 'cashu', reason: 'Invalid BOLT-11 invoice' }
+  }
+  const paymentHash = invoiceDecoded.paymentHashHex
+
   const token = tokenStore.consumeFirst()
   if (!token) {
     return { paid: false, method: 'cashu', reason: 'No Cashu tokens available' }
@@ -10,9 +23,10 @@ async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _optio
   // Track whether wallet.send() has completed so the catch block knows
   // whether to restore original token or the swapped proofs.
   let sendProofs: {
-    proofsToSend: Array<{ id: string; amount: number; secret: string; C: string }>
-    proofsToKeep: Array<{ id: string; amount: number; secret: string; C: string }>
-    getEncodedTokenV4: (token: { mint: string; proofs: Array<{ id: string; amount: number; secret: string; C: string }> }) => string
+    proofsToSend: Proof[]
+    proofsToKeep: Proof[]
+    getEncodedTokenV4: (token: { mint: string; proofs: Proof[] }) => string
+    quoteId: string
   } | undefined
 
   try {
@@ -47,55 +61,83 @@ async function doPayInvoice(invoice: string, tokenStore: CashuTokenStore, _optio
     // From this point, only proofsToSend/proofsToKeep are valid — never
     // re-add the original token.  Track this so the catch block knows
     // whether the original or the new proofs should be restored.
-    sendProofs = { proofsToSend, proofsToKeep, getEncodedTokenV4 }
+    sendProofs = { proofsToSend, proofsToKeep, getEncodedTokenV4, quoteId: meltQuote.quote }
 
     const meltResponse = await wallet.meltProofs(meltQuote, proofsToSend)
+    const state = meltResponse.quote.state
 
-    if (meltResponse.quote.state === 'PAID') {
-      // Re-add any change proofs from the melt and kept proofs from send()
-      // to avoid silent funds loss
-      restoreChangeProofs(
-        tokenStore,
-        getEncodedTokenV4,
-        token.mint,
-        proofsToKeep,
-        meltResponse.change,
-      )
+    if (state === 'PAID') {
+      // The sent proofs are spent. Keep and change proofs are ours either way.
+      restoreChangeProofs(tokenStore, getEncodedTokenV4, token.mint, proofsToKeep, meltResponse.change ?? [])
 
-      return {
-        paid: true,
-        preimage: meltResponse.quote.payment_preimage ?? undefined,
-        method: 'cashu',
+      // NUT-05 lets a mint report PAID with a null preimage. Without a
+      // preimage that hashes to the invoice, settlement is only the mint's
+      // word, and a caller told "not paid" would pay again.
+      const preimage = meltResponse.quote.payment_preimage ?? undefined
+      if (!preimage || !verifyPreimage(preimage, paymentHash)) {
+        return {
+          paid: false,
+          method: 'cashu',
+          outcome: 'unknown',
+          reason: `The mint reported the melt as paid but returned no preimage that matches the invoice. ${UNKNOWN_REASON}`,
+        }
       }
-    } else {
-      // Melt failed but send() already swapped proofs on the mint.
-      // Re-add the send + keep proofs (NOT the original token which is now dead).
-      restoreChangeProofs(
-        tokenStore,
-        getEncodedTokenV4,
-        token.mint,
-        proofsToKeep,
-        proofsToSend,
-      )
-      return { paid: false, method: 'cashu', reason: 'Cashu melt failed' }
+      return { paid: true, preimage, method: 'cashu' }
     }
+
+    if (state === 'PENDING') {
+      // The mint may still pay with the sent proofs, so they are neither
+      // spendable nor lost. Hold them aside until reconcile rules on them.
+      restoreChangeProofs(tokenStore, getEncodedTokenV4, token.mint, proofsToKeep, [])
+      reserveProofs(tokenStore, getEncodedTokenV4, token.mint, proofsToSend, paymentHash, meltQuote.quote)
+      return {
+        paid: false,
+        method: 'cashu',
+        outcome: 'unknown',
+        reason: `The mint reports the melt as pending. ${UNKNOWN_REASON}`,
+      }
+    }
+
+    // UNPAID: the mint refused the melt, so the swapped proofs are still
+    // valid. Re-add the send + keep proofs (NOT the dead original token).
+    restoreChangeProofs(tokenStore, getEncodedTokenV4, token.mint, proofsToKeep, proofsToSend)
+    return { paid: false, method: 'cashu', reason: 'Cashu melt failed' }
   } catch {
     if (sendProofs) {
-      // send() succeeded before the error — original proofs are dead on the mint.
-      // Restore the new proofs instead; they are the only ones still valid.
-      console.warn('[402-mcp] Cashu payment failed after send() succeeded — restoring swapped proofs')
-      restoreChangeProofs(
-        tokenStore,
-        sendProofs.getEncodedTokenV4,
-        token.mint,
-        sendProofs.proofsToKeep,
-        sendProofs.proofsToSend,
-      )
-    } else {
-      // Error occurred before send() — original token is still valid
-      tokenStore.add(token)
+      // send() succeeded, so the melt request may have reached the mint
+      // before the error. Only the keep proofs are certainly ours; the sent
+      // ones are held aside until reconcile learns what the mint did.
+      console.warn('[402-mcp] Cashu melt failed after send() succeeded; melt outcome unknown, sent proofs reserved')
+      restoreChangeProofs(tokenStore, sendProofs.getEncodedTokenV4, token.mint, sendProofs.proofsToKeep, [])
+      reserveProofs(tokenStore, sendProofs.getEncodedTokenV4, token.mint, sendProofs.proofsToSend, paymentHash, sendProofs.quoteId)
+      return {
+        paid: false,
+        method: 'cashu',
+        outcome: 'unknown',
+        reason: `The Cashu melt request failed after it may have reached the mint. ${UNKNOWN_REASON}`,
+      }
     }
+    // Error occurred before send(); original token is still valid
+    tokenStore.add(token)
     return { paid: false, method: 'cashu', reason: 'Cashu payment failed' }
+  }
+}
+
+function reserveProofs(
+  tokenStore: CashuTokenStore,
+  encodeFn: (token: { mint: string; proofs: Proof[] }) => string,
+  mint: string,
+  proofs: Proof[],
+  paymentHash: string,
+  quoteId: string,
+): void {
+  const amountSats = proofs.reduce((sum, p) => sum + p.amount, 0)
+  if (amountSats <= 0) return
+  try {
+    const now = new Date().toISOString()
+    tokenStore.reserve({ token: encodeFn({ mint, proofs }), mint, amountSats, addedAt: now, paymentHash, quoteId, reservedAt: now })
+  } catch {
+    console.warn('[402-mcp] Failed to reserve proofs from an unresolved melt')
   }
 }
 
@@ -122,6 +164,42 @@ export function createCashuWallet(
     payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult> {
       return withLock(() => doPayInvoice(invoice, tokenStore, options))
     },
+
+    lookupPayment(paymentHash: string): Promise<PaymentLookup> {
+      return withLock(() => lookupMelt(paymentHash, tokenStore))
+    },
+  }
+}
+
+/**
+ * Asks the mint about a melt whose proofs were reserved. An UNPAID quote
+ * returns the proofs to the spendable pool; a PAID one with a matching
+ * preimage forgets them.
+ */
+async function lookupMelt(paymentHash: string, tokenStore: CashuTokenStore): Promise<PaymentLookup> {
+  const reserved = tokenStore.getReserved(paymentHash)
+  if (!reserved) {
+    return { state: 'pending', reason: 'No reserved Cashu melt matches this payment hash, so the mint cannot be asked about it.' }
+  }
+  try {
+    const { Wallet } = await import('@cashu/cashu-ts')
+    const wallet = new Wallet(reserved.mint, { unit: 'sat' })
+    const quote = await wallet.checkMeltQuoteBolt11(reserved.quoteId)
+    if (quote.state === 'PAID') {
+      const preimage = quote.payment_preimage ?? undefined
+      if (preimage && verifyPreimage(preimage, paymentHash)) {
+        tokenStore.dropReserved(paymentHash)
+        return { state: 'settled', preimage: preimage.toLowerCase() }
+      }
+      return { state: 'pending', reason: 'The mint reports the melt as paid but gave no preimage that matches the invoice.' }
+    }
+    if (quote.state === 'UNPAID') {
+      tokenStore.releaseReserved(paymentHash)
+      return { state: 'failed', reason: 'The mint reports the melt as unpaid; the reserved proofs are spendable again.' }
+    }
+    return { state: 'pending', reason: 'The mint still reports the melt as pending.' }
+  } catch {
+    return { state: 'pending', reason: 'The mint could not be reached. Try again later.' }
   }
 }
 
@@ -133,10 +211,10 @@ export function createCashuWallet(
  */
 function restoreChangeProofs(
   tokenStore: CashuTokenStore,
-  encodeFn: (token: { mint: string; proofs: Array<{ id: string; amount: number; secret: string; C: string }> }) => string,
+  encodeFn: (token: { mint: string; proofs: Proof[] }) => string,
   mint: string,
-  keepProofs: Array<{ id: string; amount: number; secret: string; C: string }>,
-  changeProofs: Array<{ id: string; amount: number; secret: string; C: string }>,
+  keepProofs: Proof[],
+  changeProofs: Proof[],
 ): void {
   const allProofs = [...keepProofs, ...changeProofs]
   if (allProofs.length === 0) return

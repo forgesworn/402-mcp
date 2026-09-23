@@ -4,7 +4,7 @@ import {
   verifyLud21,
   fetchJson,
 } from 'farrier-kit'
-import type { WalletProvider, PaymentResult, PayInvoiceOptions } from './types.js'
+import type { WalletProvider, PaymentResult, PayInvoiceOptions, PaymentLookup } from './types.js'
 import type { LnurlcashNoteStore, StoredNote } from '../store/lnurlcash-notes.js'
 import {
   createNoteOps,
@@ -182,18 +182,19 @@ export function createLnurlcashWallet(
     }
 
     // A reconcile can turn up a payment that landed after an earlier attempt
-    // gave up on it. That preimage is a credential somebody paid for, so it
-    // is said out loud here rather than only filed: the caller is a wallet
-    // asking to spend, and "by the way, that payment you wrote off did go
-    // through" changes what they do next.
+    // gave up on it. That is said out loud here rather than only filed: the
+    // caller is a wallet asking to spend, and "by the way, that payment you
+    // wrote off did go through" changes what they do next. The preimage
+    // itself is a credential, so it stays in the store and out of tool
+    // output; l402-reconcile turns it into a stored credential.
     let recoveredNote = ''
     try {
       const report = await ops.reconcile()
       if (report.recovered.length > 0) {
         const each = report.recovered
-          .map(m => `${m.paymentHashHex.slice(0, 12)}… preimage ${m.preimage}`)
-          .join('; ')
-        recoveredNote = ` Also recovered ${report.recovered.length} earlier melt(s) that settled after being written off: ${each}.`
+          .map(m => `${m.paymentHashHex.slice(0, 12)}…`)
+          .join(', ')
+        recoveredNote = ` Also recovered ${report.recovered.length} earlier melt(s) that settled after being written off (payment hash ${each}); call l402-reconcile with each payment hash to use it.`
       }
     } catch { /* best effort; selection below simply sees fewer notes */ }
 
@@ -245,6 +246,20 @@ export function createLnurlcashWallet(
     },
     payInvoice(invoice: string, options?: PayInvoiceOptions): Promise<PaymentResult> {
       return withLock(() => doPayInvoice(invoice, options))
+    },
+
+    lookupPayment(paymentHash: string): Promise<PaymentLookup> {
+      return withLock(async () => {
+        try { await ops.reconcile() } catch { /* the stored record below still counts */ }
+        const settled = store.settledMelts().find(m => m.paymentHashHex === paymentHash)
+        if (settled) return { state: 'settled', preimage: settled.preimage }
+        return {
+          state: 'pending',
+          reason: store.byState('melting').some(n => n.paymentHashHex === paymentHash)
+            ? 'The mint has not yet settled the melt for this payment.'
+            : 'No settlement has been recovered for this payment. Check with the mint, or supply the preimage.',
+        }
+      })
     },
   }
 }
