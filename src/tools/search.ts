@@ -96,10 +96,11 @@ export async function handleSearch(
     const maxResults = args.maxResults ?? 20
     const queryLower = args.query.toLowerCase()
 
-    // Build relay-side tag filters — relays handle topic and payment method filtering
+    // Relays index single-letter tags only, so topics (#t) filter at the relay.
+    // Public relays reject a #pmi filter outright ("unindexed tag filter"), so
+    // payment methods are matched here instead.
     const relayFilters: SubscribeFilters = {}
     if (args.topics?.length) relayFilters['#t'] = args.topics
-    if (args.paymentMethod) relayFilters['#pmi'] = [args.paymentMethod]
 
     const rawEvents = await deps.subscribeEvents(relays, [KIND_L402_ANNOUNCE], timeout, relayFilters)
 
@@ -115,6 +116,11 @@ export async function handleSearch(
     }
 
     let services = [...replaceableMap.values()].map(parseAnnounceEvent)
+
+    if (args.paymentMethod) {
+      const method = args.paymentMethod.toLowerCase()
+      services = services.filter(svc => svc.paymentMethods.some(pm => pm.toLowerCase() === method))
+    }
 
     // Filter by query text — relays cannot do substring search so this remains client-side
     if (queryLower) {
@@ -165,13 +171,13 @@ export function registerSearchTool(server: McpServer, deps: SearchDeps): void {
   server.registerTool(
     'l402-search',
     {
-      description: 'Search Nostr relays for paid API announcements (kind 31402) and return their URLs, pricing and capabilities. Topic and payment-method filters are sent to the relays; the query text is matched locally. Announcement text is written by whoever published it and is marked as untrusted content.',
+      description: 'Search Nostr relays for paid API announcements (kind 31402) and return their URLs, pricing and capabilities. Topic filters are sent to the relays; the payment method and query text are matched locally. Announcement text is written by whoever published it and is marked as untrusted content.',
       annotations: { readOnlyHint: true, openWorldHint: true },
       inputSchema: {
         query: z.string().max(200).describe('Search query to match against service names, descriptions, and capabilities'),
         relays: z.array(z.url()).max(10).optional().describe('Nostr relay URLs to query (defaults to popular public relays)'),
         topics: z.array(z.string().max(50)).max(10).optional().describe('Filter by topic tags (e.g. ["ai", "data"])'),
-        paymentMethod: z.string().max(100).optional().describe('Filter by payment method (e.g. "l402", "cashu", "x402", "xcashu")'),
+        paymentMethod: z.string().max(100).optional().describe('Filter by payment rail, the first value of an announcement\'s pmi tag (e.g. "l402", "cashu", "xcashu", "lnurlcash", "x402", "payment"). A Cashu service may list "cashu", "xcashu" or both'),
         maxResults: z.int().min(1).max(100).optional().describe('Maximum number of results to return (default 20)'),
         timeout: z.int().min(1000).max(30000).optional().describe('Relay subscription timeout in milliseconds (default 5000)'),
       },

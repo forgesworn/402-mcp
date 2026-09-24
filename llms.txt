@@ -110,7 +110,7 @@ Check the cached credit balance for a specific server URL. Returns the number of
 
 ### `l402-search`
 
-Search for L402 services on Nostr relays. Queries kind 31402 announcement events (topic and payment-method filters are sent to the relays; query text is matched locally) and returns matching services with their names, URLs, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the returned URLs array to `l402-fetch` for automatic transport selection and fallback. This enables agents to find paid APIs without knowing URLs upfront: a decentralised alternative to API directories. Announcement text is wrapped in UNTRUSTED CONTENT markers.
+Search for L402 services on Nostr relays. Queries kind 31402 announcement events (topic filters are sent to the relays; the payment method and query text are matched locally) and returns matching services with their names, URLs, pubkey, pricing, capabilities, and supported payment methods. Filter by query text, topics (e.g. "ai", "data"), or payment method: the rail an announcement lists first in each `pmi` tag (`l402`, `cashu`, `xcashu`, `lnurlcash`, `x402`, `payment`). A Cashu service may list `cashu`, `xcashu` or both. Services may advertise multiple transport URLs (clearnet, .onion, HNS); pass the first as `url`, the whole array as `urls` and the service's `pubkey` to `l402-fetch`, for automatic transport selection and fallback with credentials shared across them. This enables agents to find paid APIs without knowing URLs upfront: a decentralised alternative to API directories. Announcement text is wrapped in UNTRUSTED CONTENT markers.
 
 ## Widget Tools
 

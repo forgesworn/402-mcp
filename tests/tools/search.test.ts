@@ -211,7 +211,7 @@ describe('handleSearch', () => {
     expect(parsed[0].paymentMethods).toEqual(['l402', 'cashu'])
   })
 
-  it('passes payment method filter to subscribeEvents and returns relay-filtered results', async () => {
+  it('filters by payment method locally and never sends a #pmi relay filter', async () => {
     const l402Event = makeEvent({
       id: 'evt-l402',
       tags: [
@@ -236,26 +236,42 @@ describe('handleSearch', () => {
     const allEvents = [l402Event, cashuEvent]
     let capturedFilters: SubscribeFilters | undefined
 
-    // Simulate relay-side filtering: relay returns only events matching the pmi filter
+    // Public relays reject multi-letter tag filters, so the relay returns everything
     const deps: SearchDeps = {
       subscribeEvents: async (_relays, _kinds, _timeout, filters?: SubscribeFilters) => {
         capturedFilters = filters
-        return allEvents.filter(e =>
-          !filters?.['#pmi']?.length ||
-          e.tags.some(t => t[0] === 'pmi' && filters['#pmi']!.includes(t[1]))
-        )
+        return allEvents
       },
     }
 
     const result = await handleSearch(
-      { query: 'ai', paymentMethod: 'cashu' },
+      { query: 'ai', paymentMethod: 'Cashu' },
       deps,
     )
     const parsed = JSON.parse(result.content[0].text)
 
-    expect(capturedFilters).toEqual({ '#pmi': ['cashu'] })
+    expect(capturedFilters).toEqual({})
     expect(parsed).toHaveLength(1)
     expect(unwrapUntrusted(parsed[0].name)).toBe('Cashu Service')
+  })
+
+  it('matches the payment rail, not its parameters', async () => {
+    const event = makeEvent({
+      id: 'evt-rail',
+      tags: [
+        ['d', 'rail'],
+        ['name', 'Rail Service'],
+        ['url', 'https://rail.example.com'],
+        ['pmi', 'l402', 'lightning'],
+      ],
+    })
+    const deps: SearchDeps = { subscribeEvents: async () => [event] }
+
+    const byParam = JSON.parse((await handleSearch({ query: '', paymentMethod: 'lightning' }, deps)).content[0].text)
+    const byRail = JSON.parse((await handleSearch({ query: '', paymentMethod: 'l402' }, deps)).content[0].text)
+
+    expect(byParam).toHaveLength(0)
+    expect(byRail).toHaveLength(1)
   })
 
   it('passes topic filter to subscribeEvents and returns relay-filtered results', async () => {

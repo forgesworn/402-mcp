@@ -4,10 +4,13 @@ import { validateUrl } from '../fetch/ssrf-guard.js'
 
 const MAX_EVENTS = 1000
 
-/** Optional tag filters to pass to relays, reducing bandwidth by filtering server-side. */
+/**
+ * Optional tag filters to pass to relays, reducing bandwidth by filtering
+ * server-side. Relays index single-letter tags only; a multi-letter tag
+ * filter such as #pmi is rejected, so filter those after the query.
+ */
 export interface SubscribeFilters {
   '#t'?: string[]
-  '#pmi'?: string[]
 }
 
 /** Creates a Nostr relay subscriber that connects, subscribes to event kinds, and collects events within a timeout. */
@@ -58,7 +61,6 @@ export function createNostrSubscriber(ssrfAllowPrivate = false): SearchDeps['sub
           return new Promise<void>((resolve) => {
             const filter: Record<string, unknown> = { kinds }
             if (filters?.['#t']?.length) filter['#t'] = filters['#t']
-            if (filters?.['#pmi']?.length) filter['#pmi'] = filters['#pmi']
 
             const sub = relay.subscribe(
               [filter as Parameters<typeof relay.subscribe>[0][0]],

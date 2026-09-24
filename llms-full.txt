@@ -265,7 +265,7 @@ For human wallets with a toll-booth payment page, polls for settlement for up to
 - `topics` — topic tags
 - `capabilities` — array of `{ name, description }`
 
-Names, descriptions and capability text are wrapped in UNTRUSTED CONTENT markers. Topic and payment-method filters are sent to the relays; the query text is matched locally.
+Names, descriptions and capability text are wrapped in UNTRUSTED CONTENT markers. Topic filters are sent to the relays; the payment method and query text are matched locally, because relays index single-letter tags only.
 
 **When to use:** When the agent needs a paid API but doesn't know the URL. Searches the decentralised Nostr network for kind 31402 service announcements. Services may advertise multiple transport URLs (clearnet, .onion, Handshake); pass the `urls` array and `pubkey` to `l402-fetch` for automatic transport selection and fallback.
 
