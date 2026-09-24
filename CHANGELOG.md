@@ -98,6 +98,15 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.3.1 (2026-09-24)
+
+### Bug Fixes
+
+- load widget HTML from the directory the package ships (widgets)
+- match payment methods locally, since relays reject a #pmi filter (search)
+
+
+
 ## 4.3.0 (2026-09-23)
 
 ### Features
