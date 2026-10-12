@@ -16,6 +16,7 @@ import type { PendingPayment } from '../store/pending-payments.js'
 import { safeErrorMessage } from './safe-error.js'
 import { filterResponseHeaders } from './safe-headers.js'
 import { untrusted } from './untrusted.js'
+import { unsupportedStorageCheckout } from './storage-discovery.js'
 
 const HEX_RE = /^[0-9a-fA-F]+$/
 const MACAROON_RE = /^[A-Za-z0-9+/_\-=]+$/
@@ -138,9 +139,11 @@ function isOrigin(value: string): boolean {
 
 /** Makes an HTTP request with automatic L402/x402 payment and credential reuse. Pays the invoice if within budget, stores the credential, and retries. */
 export async function handleFetch(
-  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string; maxCostSats?: number },
+  args: { url: string; urls?: string[]; method?: string; headers?: Record<string, string>; body?: string; autoPay?: boolean; pubkey?: string; txHash?: string; maxCostSats?: number; paymentFlow?: 'wildbloom-checkout-v1' },
   deps: FetchDeps,
 ) {
+  if (args.paymentFlow === 'wildbloom-checkout-v1' || (args.urls?.length ? args.urls : [args.url]).some(url => /^\/checkout\/v1(?:\/|$)/.test(new URL(url).pathname)))
+    return unsupportedStorageCheckout()
   // When multiple URLs are provided (from l402-search results), use transport fallback.
   // The first URL in `urls` is also the primary URL for identity, origin, and payment.
   const primaryUrl = args.urls?.length ? args.urls[0] : args.url
@@ -728,6 +731,7 @@ export function registerFetchTool(server: McpServer, deps: FetchDeps): void {
       description: 'Fetch a URL, paying its HTTP 402 challenge (L402, IETF Payment, Cashu or LNURLcash) when autoPay is true and the price is within MAX_AUTO_PAY_SATS, maxCostSats and the spend limits. Reuses stored credentials. Without autoPay, a 402 comes back with its price and paymentHash so the user can decide; l402-pay can then pay it. For x402 services, which this server supports only in an experimental custom format, returns the payment details for the user to pay in their own wallet. Response bodies are marked as untrusted content. With widget hosts, call l402-fetch-preview first to show the price.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
+        paymentFlow: z.literal('wildbloom-checkout-v1').optional().describe('Pass the storage paymentFlow from search results; this unsupported flow is refused before network or wallet access.'),
         url: z.url().describe('The primary URL to request. When using search results, pass the first URL here and all URLs in the urls field.'),
         urls: z.array(z.url()).max(10).optional().describe('All transport URLs from l402-search results (clearnet, onion, HNS). When present, transports are tried in preference order with automatic fallback on connection failure.'),
         method: z.enum(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']).optional().default('GET').describe('HTTP method'),

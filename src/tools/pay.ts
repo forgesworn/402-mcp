@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { unsupportedStorageCheckout } from './storage-discovery.js'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import type { ChallengeCache } from '../l402/challenge-cache.js'
 import type { WalletMethod, WalletProvider } from '../wallet/types.js'
@@ -36,9 +37,11 @@ export async function handlePay(
     macaroon?: string
     paymentHash?: string
     method?: WalletMethod
+    paymentFlow?: 'wildbloom-checkout-v1'
   },
   deps: PayDeps,
 ) {
+  if (args.paymentFlow === 'wildbloom-checkout-v1') return unsupportedStorageCheckout()
   // Resolve invoice and macaroon from cache if paymentHash provided
   let invoice = args.invoice
   let macaroon = args.macaroon
@@ -325,6 +328,7 @@ export function registerPayTool(server: McpServer, deps: PayDeps): void {
       description: 'Pay a challenge that l402-fetch or l402-discover returned, by its paymentHash, and store the credential so the next l402-fetch succeeds. For human wallets, polls the payment page for settlement for up to 120s; call it straight after showing the payment URL to the user. An invoice that did not come from such a challenge is paid only if the human approves it in the client.',
       annotations: { destructiveHint: true, openWorldHint: true },
       inputSchema: {
+        paymentFlow: z.literal('wildbloom-checkout-v1').optional().describe('Pass the storage paymentFlow from search results. Wildbloom checkout is refused before wallet access.'),
         invoice: z.string().max(20_000).optional().describe('BOLT-11 invoice. Leave out when paying a challenge by paymentHash; any other invoice needs the human to approve it.'),
         macaroon: z.string().max(10_000).optional().describe('Macaroon from the L402 challenge. Optional if paymentHash matches a cached challenge.'),
         paymentHash: z.string().max(128).optional().describe('Payment hash of a challenge from l402-fetch or l402-discover.'),
