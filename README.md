@@ -253,3 +253,27 @@ Built by [@forgesworn](https://github.com/forgesworn).
 ## Licence
 
 [MIT](LICENSE)
+
+## Wildbloom storage discovery
+
+`l402-search` also recognises the signed `forgesworn-storage-service-v1` profile
+(kind 31402, shared `402-announce/storage` 2.3.0). Paid results identify
+`storage.paymentFlow: "wildbloom-checkout-v1"` and `autoPaySupported: false`.
+Free shelter accepts authorised mirrors with best-effort evictable retention,
+not unknown-user direct uploads. The tool contacts only the requested relays;
+service terms are untrusted operator claims, not recommendations or uptime proof.
+
+Latest valid signed records are selected before expiry/withdrawal/query filtering;
+equal timestamps use the lowest event ID. Up to 2,000 watermarks are retained
+in memory per registered search handler across calls, without silently evicting
+withdrawals. A new handler/process has no memory of records omitted by a relay.
+Full/paused current listings remain descriptive results; expired/withdrawn ones
+remain watermarks but are not returned as current offers. No browser, ledger or
+credential persistence is added by discovery.
+
+Pass the result payment flow to `l402-fetch` or `l402-pay`: Wildbloom checkout
+is explicitly refused before dependency, network, credential or wallet access.
+`l402-fetch` also refuses `/checkout/v1` paths. Review current `/services/v1`
+separately and use Wildbloom for a bound private NIP-98 quote and explicit payment.
+The automatic paid-API tools do not implement Wildbloom checkout, free mirroring
+or an upload allowance. Signature validation does not authorise a purchase.
