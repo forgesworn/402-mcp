@@ -98,6 +98,14 @@
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
 
+## 4.4.0 (2026-10-12)
+
+### Features
+
+- describe public storage and refuse unsupported checkout (#61)
+
+
+
 ## 4.3.1 (2026-09-24)
 
 ### Bug Fixes
