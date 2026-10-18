@@ -1,3 +1,29 @@
+## 4.4.0 (2026-10-12)
+
+### Features
+
+- describe public storage and refuse unsupported checkout (#61)
+
+
+
+## 4.3.1 (2026-09-24)
+
+### Bug Fixes
+
+- load widget HTML from the directory the package ships (widgets)
+- match payment methods locally, since relays reject a #pmi filter (search)
+
+
+
+## 4.3.0 (2026-09-23)
+
+### Features
+
+- double-pay guards, reconcile tool, daily cap and hardened HTTP transport (#44)
+
+
+
+
 ## 4.2.2 (2026-09-23)
 
 ### Bug Fixes
@@ -97,32 +123,6 @@
 * publish mcpName field for MCP registry validation ([7e0c8ff](https://github.com/forgesworn/402-mcp/commit/7e0c8ffca0718499782fb813a900832b651a77e4))
 
 # [3.15.0](https://github.com/forgesworn/402-mcp/compare/v3.14.0...v3.15.0) (2026-03-27)
-
-## 4.4.0 (2026-10-12)
-
-### Features
-
-- describe public storage and refuse unsupported checkout (#61)
-
-
-
-## 4.3.1 (2026-09-24)
-
-### Bug Fixes
-
-- load widget HTML from the directory the package ships (widgets)
-- match payment methods locally, since relays reject a #pmi filter (search)
-
-
-
-## 4.3.0 (2026-09-23)
-
-### Features
-
-- double-pay guards, reconcile tool, daily cap and hardened HTTP transport (#44)
-
-
-
 
 ### Features
 
