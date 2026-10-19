@@ -4,17 +4,17 @@
 
 [![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
-[![Node](https://img.shields.io/badge/Node-%3E%3D22-green)](https://nodejs.org/)
+[![Node](https://img.shields.io/badge/Node-%3E%3D22.4-green)](https://nodejs.org/)
 [![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](./docs/security.md)
 [![Nostr](https://img.shields.io/badge/Nostr-Zap%20me-purple)](https://primal.net/p/npub1mgvlrnf5hm9yf0n5mf9nqmvarhvxkc6remu5ec3vf8r0txqkuk7su0e7q2)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/TheCryptoDonkey?logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/TheCryptoDonkey)
 
 L402 client MCP that gives AI agents economic agency. Discover, pay for, and consume Lightning and ecash payment-gated APIs within limits you set: no human registration, no API keys, no middlemen.
 
-- **Discover** paid APIs on Nostr — no URLs needed upfront
+- **Discover** paid APIs on Nostr, no URLs needed upfront
 - **Auto-pay** with Lightning (NWC), Cashu ecash, LNURLcash bearer notes, or human QR fallback
 - **Credentials cached and encrypted** at rest (AES-256-GCM)
-- **Works with any L402 server** — toll-booth, Aperture, or any future implementation
+- **Works with any L402 server**: toll-booth, Aperture, or any future implementation
 
 ## Quick start
 
@@ -32,11 +32,37 @@ claude mcp add 402-mcp -- npx 402-mcp
 
 **3. Try it**
 
-Ask Claude: *"Search for paid joke APIs using l402-search"* — no wallet needed, just discovery.
+Ask Claude: *"Search for paid joke APIs using l402-search"*, no wallet needed, just discovery.
 
-Ready to make paid calls? See the [full quickstart guide](./docs/quickstart.md) to set up a wallet and watch your agent pay for its first API call.
+**4. Pay for calls (optional): connect an NWC wallet**
 
-Requires Node.js 22 or newer.
+402-mcp reads the Nostr Wallet Connect URI from a private file, never from an environment variable or a command line. Create the file with owner-only permissions first, then paste the URI into it with an editor so it stays out of your shell history:
+
+```bash
+mkdir -p ~/.402-mcp
+touch ~/.402-mcp/wallet.nwc
+chmod 600 ~/.402-mcp/wallet.nwc
+# open ~/.402-mcp/wallet.nwc in an editor, paste the URI on one line, save
+```
+
+The URI comes from your wallet service and looks like this, with your own values in place of the placeholders:
+
+```
+nostr+walletconnect://<wallet-pubkey-hex>?relay=<wss-relay-url>&secret=<secret-hex>
+```
+
+It needs a 64-character hex wallet pubkey, one to eight `relay` values, one 64-character hex `secret`, and may carry `lud16`; any other parameter is rejected. The file must be a regular, non-empty file under 8 KiB, and on macOS and Linux it is refused unless group and other have no permissions (`chmod 600`). Create the connection with `pay_invoice` permission and a spending budget (`lookup_invoice` as well lets `l402-reconcile` ask the wallet about unknown outcomes). The wallet must support NIP-44 v2 encryption.
+
+Then register 402-mcp with the absolute path (`$HOME` expands in your shell when you run the command):
+
+```bash
+claude mcp remove 402-mcp
+claude mcp add 402-mcp -e NWC_URI_FILE="$HOME/.402-mcp/wallet.nwc" -e MAX_AUTO_PAY_SATS=1000 -- npx 402-mcp
+```
+
+For Claude Desktop or Cursor, put the same absolute path in the `env` block of the server entry. A raw `NWC_URI` variable is refused at startup. For Cashu, LNURLcash or no wallet at all, and a first paid call, see the [full quickstart guide](./docs/quickstart.md).
+
+Requires Node.js 22.4 or newer.
 
 ## How it works
 
@@ -44,8 +70,9 @@ Requires Node.js 22 or newer.
 graph LR
     A["1. l402-config()"] --> B["2. l402-discover(url)"]
     B --> C["3. Agent reasons<br/>about pricing"]
-    C --> D["4. l402-buy-credits()<br/>or l402-fetch()"]
-    D --> E["5. l402-fetch(url)<br/>with credentials"]
+    C --> D["4. l402-buy-credits()<br/>or l402-fetch(autoPay)"]
+    E["5. l402-fetch(url)<br/>with stored credential"]
+    D --> E
     E --> F["6. Data returned<br/>+ balance cached"]
 ```
 
@@ -70,6 +97,8 @@ Agent: "I need routing data from routing.example.com"
    -> 200 OK, route data, 545 credits remaining
 ```
 
+Step 5 needs no `autoPay`: step 4 stored a credential for that server and `l402-fetch` sends it. Without a stored credential, `l402-fetch` pays nothing unless `autoPay: true` is set; it returns the price and a `paymentHash` instead (see [Spending limits](#spending-limits)).
+
 For detailed architecture and payment flow diagrams, see [docs/architecture.md](./docs/architecture.md).
 
 ## Configuration
@@ -77,21 +106,31 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `NWC_URI_FILE` | - | Path to a private `0600` file containing the NWC bearer URI |
-| `CASHU_TOKENS` | - | Path to Cashu token store file |
-| `LNURLCASH_NOTES` | - | Path to LNURLcash bearer note store file (LUD-25) |
+| `CASHU_TOKENS` | - | Path to Cashu token store file. Must be within your home directory |
+| `LNURLCASH_NOTES` | - | Path to LNURLcash bearer note store file (LUD-25). Must be within your home directory |
 | `MAX_AUTO_PAY_SATS` | 1000 | Most a single automatic payment may cost. Anything dearer is not paid; the challenge goes back to the agent |
 | `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Automatic spend allowed in any rolling 60 seconds. `0` blocks all auto-pay |
 | `MAX_SPEND_PER_DAY_SATS` | 5000 | Automatic spend allowed in any rolling 24 hours, kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` blocks all auto-pay |
-| `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage |
+| `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage. Must be within your home directory |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
 | `PORT` | 3402 | HTTP server port (when `TRANSPORT=http`) |
 | `BIND_ADDRESS` | `127.0.0.1` | HTTP bind address |
 | `HTTP_AUTH_TOKEN_FILE` | - | Private `0600` file holding the bearer token HTTP clients must send. Required when `TRANSPORT=http` |
 | `HTTP_ALLOWED_HOSTS` | - | Extra `Host` header values the HTTP transport accepts (comma-separated), such as a reverse proxy's name |
+| `CORS_ORIGIN` | disabled | CORS origin for the HTTP transport (`*` or one origin). `*` logs a warning: any website could then call the server |
 | `TRANSPORT_PREFERENCE` | `onion,hns,https,http` | Preferred transport order for multi-URL services (comma-separated) |
 | `TOR_PROXY` | - | SOCKS5 proxy for `.onion` addresses only (e.g. `socks5h://127.0.0.1:9050`) |
 | `SOCKS_PROXY` | - | SOCKS5 proxy for every paid-API request (e.g. Tor at `socks5h://127.0.0.1:9050`). Set this or `TOR_PROXY`, not both |
 | `HNS_GATEWAY_URL` | `https://query.hdns.io/` | DNS-over-HTTPS resolver used for Handshake names. Any host name that ordinary DNS cannot find is looked up here |
+| `HUMAN_PAY_TIMEOUT_S` | 600 | How long the human payer polls the server for settlement, in seconds, when there is no payment page to poll |
+| `HUMAN_PAY_POLL_S` | 3 | First polling interval for the human payer, in seconds. It backs off to 30 |
+| `FETCH_TIMEOUT_MS` | 30000 | Timeout for each outbound HTTP request |
+| `FETCH_MAX_RETRIES` | 2 | Retries for non-mutating requests. Money-mutating POSTs are never retried |
+| `FETCH_MAX_RESPONSE_BYTES` | 10485760 | Largest response body accepted (10 MiB) |
+| `SSRF_ALLOW_PRIVATE` | false | Allow requests to private and loopback addresses. Local development only |
+| `ALLOW_INSECURE_TLS` | false | Acknowledge the risk when `NODE_TLS_REJECT_UNAUTHORIZED=0` is set. Without it (or `SSRF_ALLOW_PRIVATE=true`), 402-mcp refuses to start in that case |
+
+`NWC_URI` and `HTTP_AUTH_TOKEN` are refused at startup: both secrets are read only from their `*_FILE` variables. The spend caps, `MAX_AUTO_PAY_SATS` and `FETCH_MAX_RETRIES` must be non-negative whole numbers; the timeouts, the size limit and the poll interval at least 1; `PORT` 1 to 65535.
 
 ### Transport selection and fallback
 
@@ -145,32 +184,51 @@ SOCKS5 support comes from undici's `Socks5ProxyAgent`, which Node marks experime
 | `l402-buy-credits` | Browse and purchase volume discount tiers |
 | `l402-redeem-cashu` | Redeem Cashu tokens directly (avoids Lightning round-trip) |
 
+### Arguments and results
+
+`*` marks a required argument. Every tool replies with JSON text; failures set the MCP `isError` flag.
+
+| Tool | Arguments | Returns |
+|------|-----------|---------|
+| `l402-config` | none | `nwcConfigured`, `cashuConfigured`, `cashuBalanceSats`, `maxAutoPaySats`, `maxSpendPerMinuteSats`, `maxSpendPerDaySats`, `spentLast24HoursSats`, `credentialCount`. LNURLcash notes are not reported |
+| `l402-discover` | `url`*, `method` (`GET` by default; also `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`) | `url`, `costSats`, `invoice`, `macaroon`, `paymentHash`; against toll-booth also `server` and `creditTiers`. Reads L402 challenges only, and caches the challenge for `l402-pay` |
+| `l402-fetch-preview` | `url`*, `urls` (batch, up to 10), `method`, `headers`, `pubkey` | `status` (`preview`, `free` or `error`) with `endpoint`, `protocol`, `costSats` (`costUsd` for x402), `paymentMethod` (the wallet that would pay), `paymentHash`, `expiresAt`, `message`. An array when `urls` is given |
+| `l402-fetch` | `url`*, `urls` (all transport URLs from `l402-search`, up to 10), `pubkey` (from `l402-search`), `method` (as for `l402-discover`), `headers` (object of strings), `body` (string, up to 1,000,000 characters), `autoPay` (default `false`), `maxCostSats` (integer; lowers the cap for this call), `txHash` (`0x` plus 64 hex characters, for a completed x402 payment), `paymentFlow` (see [Storage service announcements](#storage-service-announcements-wildbloom)). There is no payment-method argument | Paid or free: `status`, `headers`, `body` (marked as untrusted content), `creditsRemaining`, `satsPaid`, and `paymentMethod` when an IETF Payment, LNURLcash or xCashu rail paid. Unpaid challenge: `status: 402`, `costSats`, `invoice`, `paymentHash`, `creditsExhausted`, `tiers` when offered, `message`. Human payer: `paymentUrl` or a QR code with the invoice. Failures carry `paymentState` (`failed`, `unknown` or `blocked`) or `error` |
+| `l402-pay` | `paymentHash` (of a challenge from `l402-fetch` or `l402-discover`), `method` (`nwc`, `cashu`, `lnurlcash` or `human`), `invoice` and `macaroon` (only for an invoice no challenge produced; the human must approve it) | `paid`, `paymentState` (`paid`, `failed`, `unknown` or `blocked`), `credentialsStored`, `method`, `reason` when it did not succeed |
+| `l402-reconcile` | `paymentHash` (64 hex characters; omit to list), `preimage` (64 hex characters), `abandon` (boolean; the human must approve it) | Listing: `unresolved` (each with `paymentHash`, `origins`, `costSats`, `protocol`, `method`, `createdAt`) and `message`. Resolving: `paymentHash`, `resolved`, `state` (`settled`, `failed`, `pending` or `abandoned`), `credentialsStored` when settled, `message` |
+| `l402-credentials` | none | `credentials`: for each, `origin`, `origins`, `paymentHash`, `creditBalance`, `storedAt`, `lastUsed`, `server`. Macaroons and preimages are never shown |
+| `l402-balance` | `origin`* (a URL such as `https://api.example.com`) | `origin`, `creditsRemaining`, `lastUpdated`, `stale` (true when older than 5 minutes). An error if nothing is stored for that origin |
+| `l402-search` | `query`* (up to 200 characters), `topics` (up to 10), `paymentMethod` (the first value of an announcement's `pmi` tag: `l402`, `cashu`, `xcashu`, `lnurlcash`, `x402` or `payment`), `relays` (up to 10 URLs), `maxResults` (1 to 100, default 20), `timeout` (1000 to 30000 ms, default 5000) | An array of services: `name`, `about`, `urls`, `pubkey`, `paymentMethods`, `pricing` (`capability`, `amount`, `unit`), `topics`, `capabilities`, and `storage` for storage services. Announcement text is marked as untrusted content |
+| `l402-store-token` | `url`*, `token`* (`macaroon:preimage`) | `stored: true`, `origin`, `paymentHash` when it can be read from the macaroon. An error if the preimage or macaroon is malformed |
+| `l402-buy-credits` | `url`* (the toll-booth server), `amountSats` (omit to list tiers), `method` (`nwc`, `cashu` or `human`) | Without `amountSats`: `tiers`. With it: `paid`, `amountSats`, `creditsReceived`, `credentialsStored`, `method`; the human payer returns a QR code and `paymentHash` instead |
+| `l402-redeem-cashu` | `url`* (the toll-booth server), `token`* (a Cashu token) | `redeemed: true`, `creditsReceived`, `credentialsStored`, and a `warning` if the credential could not be stored |
+
 ## Payment methods
 
-Four payer methods, tried in priority order:
+Two separate choices decide how a 402 gets paid: which challenge the server sent, and, for a Lightning invoice, which payer pays it.
 
-1. **NWC** (Nostr Wallet Connect) — fully autonomous; pays from your connected wallet
-2. **Cashu** — fully autonomous; melts ecash tokens to pay invoices
-3. **LNURLcash**: fully autonomous; melts LUD-25 bearer notes to pay invoices
-4. **Human-in-the-loop** — presents QR code, polls for settlement
+**Payer for a Lightning invoice.** An L402 or IETF Payment challenge, `l402-pay` and `l402-buy-credits` pay an invoice with the first available payer in this order:
 
-The agent can override the method per-call, or you can configure only the methods you want.
+1. **NWC** (Nostr Wallet Connect): fully autonomous; pays from your connected wallet. Available when `NWC_URI_FILE` is set.
+2. **Cashu**: fully autonomous; melts ecash tokens to pay the invoice. Available when the `CASHU_TOKENS` store holds a balance.
+3. **LNURLcash**: fully autonomous; melts LUD-25 bearer notes to pay the invoice. Available when the `LNURLCASH_NOTES` store holds a balance.
+4. **Human-in-the-loop**: used only when none of the above is available, or when `method: "human"` is passed to `l402-pay` or `l402-buy-credits`. `l402-fetch` does not wait: it returns the toll-booth payment page URL, or a QR code and invoice, at once. You pay from your own wallet, then the agent calls `l402-pay`, which polls the toll-booth payment page for up to 120 seconds (or, with no payment page, the server's `/invoice-status/<hash>` endpoint for `HUMAN_PAY_TIMEOUT_S` seconds). Settlement can only be confirmed where the server reports it, which toll-booth does; other L402 servers do not. Whenever the price is above `MAX_AUTO_PAY_SATS` the human payer does not take over either: the challenge goes back to the agent unpaid.
 
-`l402-fetch` handles four HTTP 402 challenge variants, plus an experimental x402 format:
+One payer is chosen per payment and there is no fallback: if it fails, the failure is reported and the next payer is not tried. To use a different payer, pass `method` (`nwc`, `cashu`, `lnurlcash` or `human`) to `l402-pay`, or (`nwc`, `cashu` or `human`) to `l402-buy-credits`. `l402-fetch` has no payment-method argument. You can also configure only the methods you want.
 
-| Protocol | Challenge header | Payment |
-|----------|-----------------|---------|
-| **L402** | `WWW-Authenticate: L402` | Lightning invoice via wallet stack |
-| **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment` | Lightning invoice via wallet stack |
-| **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1…` | Bearer note handed over directly (requires a note store) |
-| **xCashu** (NUT-18) | `X-Cashu: creqA…` | Ecash token sent directly (requires Cashu wallet) |
-| **x402** (experimental, custom format) | `X-Payment-Required: x402` + JSON body | A custom format, not the x402 specification (whose servers send a base64 `PAYMENT-REQUIRED` header), so real x402 services are not supported. Payment details are shown to the human, who pays from their own wallet |
+**Challenge the server sent.** `l402-fetch` handles four HTTP 402 challenge variants, plus an experimental x402 format. When a response carries more than one, it checks them in the order below and uses the first it can act on. Every rail still needs `autoPay: true` and a price within the limits.
 
-An LNURLcash challenge is tried first. A bearer note is already money in hand,
-so paying one costs no Lightning hop and no swap at the mint: the note goes
-straight into the retry header and the server settles it. When the price does
-not match a note exactly, one is split at the mint and the change stays in the
-store. If no note covers it, the other rails are tried as usual.
+| Order | Protocol | Challenge header | Payment |
+|-------|----------|-----------------|---------|
+| 1 | **LNURLcash** (LUD-25) | `X-LNURLcash: lnurlcashreq1…` | Bearer note taken from the note store and handed over directly (requires `LNURLCASH_NOTES`). Not routed through the payer order above |
+| 2 | **xCashu** (NUT-18) | `X-Cashu: creqA…` | Ecash token sent directly from the Cashu store (requires `CASHU_TOKENS`). Not routed through the payer order |
+| 3 | **x402** (experimental, custom format) | `X-Payment-Required: x402` + JSON body | A custom format, not the x402 specification (whose servers send a base64 `PAYMENT-REQUIRED` header), so real x402 services are not supported. Payment details are shown to the human, who pays from their own wallet |
+| 4 | **IETF Payment** (`draft-ryan-httpauth-payment-01`) | `WWW-Authenticate: Payment` | Lightning invoice, paid by the payer order above |
+| 5 | **L402** | `WWW-Authenticate: L402` | Lightning invoice, paid by the payer order above |
+
+LNURLcash is checked first because a bearer note is already money in hand, so paying one costs no Lightning hop and no swap at the mint: the note goes straight into the retry header and the server settles it. When the price does not match a note exactly, one is split at the mint and the change stays in the store. If no note covers it, or no note store is configured, the remaining challenges in the same response are tried as usual. The LNURLcash payer in the list above is a different path: it melts notes to pay a Lightning invoice.
+
+`l402-fetch-preview` reports the challenge it finds without paying, and it also names the wallet that would pay (`paymentMethod`). It checks the challenge types in a different order from `l402-fetch` (IETF Payment, L402, LNURLcash, xCashu, x402), so for a server that sends several at once the preview may name a different rail from the one `l402-fetch` uses.
 
 ## Spending limits
 
@@ -187,15 +245,49 @@ store. If no note covers it, the other rails are tried as usual.
 
 402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). There are no accounts, no tracking and no analytics, and 402-mcp has no server of its own. It does talk to parties other than the APIs you call:
 
-- **Nostr relays.** `l402-search` subscribes to public relays (by default relay.damus.io, relay.primal.net and nos.lol) for service announcements, sending any topic or payment-method filter you give it. The query text itself is matched locally.
+- **Nostr relays.** `l402-search` subscribes to public relays (by default relay.damus.io, relay.primal.net and nos.lol) for service announcements, sending only the topic filter you give it. The payment-method filter and the query text are matched locally, so relays never see them.
 - **A Handshake resolver.** When ordinary DNS cannot find a host name, it is looked up at `HNS_GATEWAY_URL` (`https://query.hdns.io/` by default), which therefore sees that name. This is off under `SOCKS_PROXY`.
 - **Your wallet's services.** NWC relays, Cashu mints and LNURLcash mints see the payments you make through them.
 
 Payments use Lightning or ecash, which are pseudonymous rather than anonymous.
 
+## Using the modules in code
+
+The package exposes nine subpath imports. Each maps to `build/<path>.js` with its declaration file beside it, so TypeScript finds the types without a `types` field:
+
+| Import | Contents |
+|--------|----------|
+| `402-mcp/tools/*` | Tool handlers and `register*Tool` functions, such as `402-mcp/tools/fetch` |
+| `402-mcp/l402/*` | `parse`, `detect`, `bolt11`, `challenge-cache` |
+| `402-mcp/x402/*`, `402-mcp/xcashu/*`, `402-mcp/xlnurlcash/*`, `402-mcp/ietf-payment/*` | Challenge parsers and payment helpers for each rail |
+| `402-mcp/store/*` | Credential, Cashu token, LNURLcash note and pending-payment stores |
+| `402-mcp/fetch/*` | Resilient fetch, SSRF guard, transport selection, SOCKS and Handshake resolution |
+| `402-mcp/spend-tracker` | `SpendTracker` |
+
+These are the server's own modules, exposed as they are; read `src/` for their signatures. Do not import the package root (`402-mcp`) from library code: `main` and the `.` export both point at the server entry, `build/index.js`, which loads configuration from the environment and connects a transport as soon as it is imported.
+
+```ts
+import { SpendTracker } from '402-mcp/spend-tracker'
+import { parseL402Challenge } from '402-mcp/l402/parse'
+
+const tracker = new SpendTracker()
+console.log(tracker.tryRecord(50, 10_000)) // true: 50 sats fits under a 10,000 sat per-minute cap
+
+const challenge = parseL402Challenge('L402 macaroon="AgEEbG5kcg==", invoice="lnbc10n1pexample"')
+console.log(challenge) // { macaroon: 'AgEEbG5kcg==', invoice: 'lnbc10n1pexample' }
+```
+
+## Storage service announcements (Wildbloom)
+
+`l402-search` also returns storage services announced with the `forgesworn-storage-service-v1` profile (kind 31402, validated by `402-announce/storage` 2.3.0). Wildbloom is one such service: it offers paid storage, and a free tier called free shelter, which keeps copies pushed by authorised mirrors on a best-effort basis, may evict them, and does not take direct uploads from unknown users.
+
+These results are descriptive only. A paid storage result carries `storage.paymentFlow: "wildbloom-checkout-v1"` and `autoPaySupported: false`, and 402-mcp cannot buy it. Do not hand that flow to `l402-fetch` or `l402-pay`: both refuse it, and `l402-fetch` also refuses any `/checkout/v1` path, before any network, credential or wallet access. To buy, read the operator's current terms (its `/services/v1` listing) and use Wildbloom's own checkout, which asks for a private quote signed with NIP-98 (Nostr HTTP authentication) and an explicit payment from you. Mirroring to free shelter is not something these tools do either. The terms in an announcement are the operator's own claims, not a recommendation or proof of uptime, and a valid signature shows only who published it; it never authorises a purchase.
+
+How results are chosen: search contacts only the relays you name (or the defaults), never a storage node or a wallet. The newest valid signed announcement for each service (same publisher and `d` tag; on equal timestamps the lowest event ID) is selected before expiry, withdrawal and query filters apply. So that a relay replaying an older copy cannot revive a withdrawn or expired offer, the newest record seen for each service is kept in memory as a watermark: up to 2,000 per search handler, kept across calls until the server restarts, and a search that would exceed that fails with an error rather than dropping any. A fresh server has no watermarks, so it cannot know about a record a relay leaves out. Full or paused listings that are still current remain in the results; expired and withdrawn ones stay as watermarks but are not returned. Discovery stores nothing on disk and opens no browser.
+
 ## Ecosystem
 
-Browse live L402 services at [402.pub](https://402.pub) — the decentralised marketplace for payment-gated APIs.
+Browse live L402 services at [402.pub](https://402.pub), the decentralised marketplace for payment-gated APIs.
 
 | Project | Role |
 |---------|------|
@@ -212,7 +304,7 @@ Browse live L402 services at [402.pub](https://402.pub) — the decentralised ma
 | | 402-mcp | Lightning Labs agent tools |
 |---|---|---|
 | **Payer methods** | NWC + Cashu + LNURLcash + human fallback | Lightning only |
-| **Node required?** | No — connects to any NWC wallet | Yes — runs LND |
+| **Node required?** | No, connects to any NWC wallet | Yes, runs LND |
 | **Server compatibility** | Any L402 server | Aperture-focused |
 | **Spend safety** | Per-payment cap, per-call max cost, rolling 60s and persisted 24h windows | Per-call max-cost |
 | **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
@@ -253,27 +345,3 @@ Built by [@forgesworn](https://github.com/forgesworn).
 ## Licence
 
 [MIT](LICENSE)
-
-## Wildbloom storage discovery
-
-`l402-search` also recognises the signed `forgesworn-storage-service-v1` profile
-(kind 31402, shared `402-announce/storage` 2.3.0). Paid results identify
-`storage.paymentFlow: "wildbloom-checkout-v1"` and `autoPaySupported: false`.
-Free shelter accepts authorised mirrors with best-effort evictable retention,
-not unknown-user direct uploads. The tool contacts only the requested relays;
-service terms are untrusted operator claims, not recommendations or uptime proof.
-
-Latest valid signed records are selected before expiry/withdrawal/query filtering;
-equal timestamps use the lowest event ID. Up to 2,000 watermarks are retained
-in memory per registered search handler across calls, without silently evicting
-withdrawals. A new handler/process has no memory of records omitted by a relay.
-Full/paused current listings remain descriptive results; expired/withdrawn ones
-remain watermarks but are not returned as current offers. No browser, ledger or
-credential persistence is added by discovery.
-
-Pass the result payment flow to `l402-fetch` or `l402-pay`: Wildbloom checkout
-is explicitly refused before dependency, network, credential or wallet access.
-`l402-fetch` also refuses `/checkout/v1` paths. Review current `/services/v1`
-separately and use Wildbloom for a bound private NIP-98 quote and explicit payment.
-The automatic paid-API tools do not implement Wildbloom checkout, free mirroring
-or an upload allowance. Signature validation does not authorise a purchase.
