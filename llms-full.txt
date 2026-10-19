@@ -24,12 +24,12 @@ It implements the client side of the L402 protocol: when an API responds with HT
 │  │          │  │          │  │             │               │
 │  │ config   │  │ NWC      │  │ Credentials │               │
 │  │ discover │  │ Cashu    │  │ (AES-256)   │               │
-│  │ fetch    │  │ Human    │  │             │               │
-│  │ pay      │  │          │  │ Cashu       │               │
+│  │ fetch    │  │ LNURLcash│  │             │               │
+│  │ pay      │  │ Human    │  │ Cashu       │               │
 │  │ creds    │  │          │  │ Tokens      │               │
 │  │ balance  │  │          │  │             │               │
-│  │ search   │  │          │  │             │               │
-│  │ buy_cred │  │          │  │             │               │
+│  │ search   │  │          │  │ LNURLcash   │               │
+│  │ buy_cred │  │          │  │ notes       │               │
 │  │ redeem   │  │          │  │             │               │
 │  └──────────┘  └──────────┘  └─────────────┘               │
 │                                                              │
@@ -54,7 +54,8 @@ It implements the client side of the L402 protocol: when an API responds with HT
 src/
   index.ts                 # Entry point: config, wiring, transport setup
   config.ts                # Environment variable parsing with validation
-  spend-tracker.ts         # Atomic rolling-window spend limiter
+  spend-tracker.ts         # Atomic rolling-window spend limiter (60s and persisted 24h)
+  http-security.ts         # HTTP transport: bearer auth, Host allowlist
   tools/
     config.ts              # l402-config: introspect capabilities
     discover.ts            # l402-discover: probe pricing without paying
@@ -69,6 +70,10 @@ src/
     buy-credits.ts         # l402-buy-credits: toll-booth credit tiers
     redeem-cashu.ts        # l402-redeem-cashu: direct ecash redemption
     nostr-subscribe.ts     # Nostr relay subscription for search
+    storage-discovery.ts   # Validate storage service announcements (Wildbloom) for search
+    confirm.ts             # Ask the human directly (MCP elicitation) before an unusual payment
+    register-widgets.ts    # MCP Apps widget tools and resources
+    untrusted.ts           # Mark third-party text as untrusted content
     safe-error.ts          # Error sanitisation (strips internal details)
     safe-headers.ts        # Header sanitisation (strips auth tokens)
   wallet/
@@ -108,7 +113,9 @@ src/
     hns-resolve.ts         # Handshake name resolution via DNS-over-HTTPS (RFC 8484)
     resilient-fetch.ts     # Timeout, retry, response size limits, transport fallback
     ssrf-guard.ts          # Block requests to private/internal IPs, HNS fallback
+    socks-proxy.ts         # SOCKS5 routing for TOR_PROXY (.onion only) and SOCKS_PROXY (all)
     errors.ts              # Fetch error types (including TransportUnavailableError)
+  widgets/                 # MCP Apps widget HTML (built to src/widgets/dist by npm run build)
 tests/                     # Mirrors src/ structure
   e2e/                     # Integration tests against in-process toll-booth
 ```
@@ -242,8 +249,9 @@ For the human payer with a toll-booth payment page, polls that page for settleme
 
 **Parameters:** None.
 
-**Returns:** Array of credentials with:
-- `origin`: server origin (or service pubkey the credential is keyed by)
+**Returns:** `credentials`, an array in which each entry has:
+- `origin`: server origin, or the service pubkey the credential is keyed by when `l402-fetch` was given one
+- `origins` (array, when recorded): the origins the credential was bought through and may be sent to
 - `paymentHash`: payment hash of the purchase
 - `creditBalance`: cached balance (if known)
 - `server`: detected server type
@@ -390,7 +398,7 @@ The agent can force a specific payer with the `method` parameter of `l402-pay` (
 
 ### Rolling spend cap
 
-`MAX_SPEND_PER_MINUTE_SATS` (default: 10000) caps total spend in any 60-second window, and `MAX_SPEND_PER_DAY_SATS` (default: 5000) in any 24 hours; the daily window is kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` in either blocks auto-pay. The budget set on the NWC connection is the real hard limit. These prevent:
+`MAX_SPEND_PER_MINUTE_SATS` (default: 10000) caps total spend in any 60-second window, and `MAX_SPEND_PER_DAY_SATS` (default: 5000) in any 24 hours; the daily window is kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` in either blocks auto-pay. At those defaults the daily cap is the lower one and spend in any minute also counts towards the day, so the per-minute cap never binds until you lower it or raise the daily cap. The budget set on the NWC connection is the real hard limit. These prevent:
 - Rapid successive small payments exceeding a total budget
 - Runaway loops where the agent keeps buying credits
 - Both caps use atomic `tryRecord()` to prevent TOCTOU race conditions
@@ -424,7 +432,24 @@ chmod 600 ~/.402-mcp/wallet.nwc
 claude mcp add 402-mcp -e NWC_URI_FILE="$HOME/.402-mcp/wallet.nwc" -- npx 402-mcp
 ```
 
-The URI has the form `nostr+walletconnect://<wallet-pubkey-hex>?relay=<wss-relay-url>&secret=<secret-hex>`: a 64-character hex wallet pubkey and secret, one to eight `relay` values, an optional `lud16`, and no other parameters. The file must be a regular, non-empty file of at most 8192 bytes, and on macOS and Linux group and other must have no permissions. Create the connection with `pay_invoice` permission, a spending budget and NIP-44 v2 support; adding `lookup_invoice` lets `l402-reconcile` query the wallet. For Claude Desktop or Cursor, put the same absolute path in the `env` block as `NWC_URI_FILE`. A raw `NWC_URI` variable is refused at startup.
+The URI has the form `nostr+walletconnect://<wallet-pubkey-hex>?relay=<wss-relay-url>&secret=<secret-hex>`: a 64-character hex wallet pubkey and secret, one to eight `relay` values, an optional `lud16`, and no other parameters. The file must be a regular, non-empty file of at most 8192 bytes, and on macOS and Linux group and other must have no permissions. Create the connection with `pay_invoice` permission, a spending budget and NIP-44 v2 support; adding `lookup_invoice` lets `l402-reconcile` query the wallet. For Claude Desktop or Cursor, add an `env` block to the server entry with the absolute path of that file (JSON does not expand `~` or `$HOME`):
+
+```json
+{
+  "mcpServers": {
+    "402-mcp": {
+      "command": "npx",
+      "args": ["402-mcp"],
+      "env": {
+        "NWC_URI_FILE": "/absolute/path/to/.402-mcp/wallet.nwc",
+        "MAX_AUTO_PAY_SATS": "1000"
+      }
+    }
+  }
+}
+```
+
+A raw `NWC_URI` variable is refused at startup.
 
 ## Transport Modes
 
@@ -441,7 +466,7 @@ npx 402-mcp
 StreamableHTTP transport, stateless. Prefer stdio wherever the client can start a local process: the HTTP transport can spend from the wallet.
 
 ```bash
-openssl rand -hex 32 > ~/.402-mcp/http.token && chmod 600 ~/.402-mcp/http.token
+mkdir -p ~/.402-mcp && openssl rand -hex 32 > ~/.402-mcp/http.token && chmod 600 ~/.402-mcp/http.token
 TRANSPORT=http HTTP_AUTH_TOKEN_FILE=~/.402-mcp/http.token PORT=3402 npx 402-mcp
 ```
 
@@ -493,24 +518,24 @@ Services discovered via `l402-search` may advertise multiple transport URLs for 
 | Transport | Example | Detection |
 |-----------|---------|-----------|
 | Onion | `http://abc123...onion/api` | Hostname ends in `.onion` |
-| Handshake | `https://api.myservice/api` | TLD not in ICANN root zone (heuristic) |
+| Handshake | `https://api.myservice.hns/api` | TLD is `.hns`. A TLD that is neither on the built-in list of common ICANN TLDs nor `.hns` (such as `.pub`) is a guessed Handshake name and ranks after the later of `hns` and `https` |
 | HTTPS | `https://api.example.com/api` | Standard TLD + `https://` |
 | HTTP | `http://api.example.com/api` | Standard TLD + `http://` |
 
 ### Selection and Fallback
 
 1. **Filter**: .onion URLs are removed when no Tor proxy is configured
-2. **Sort**: URLs are ordered by `TRANSPORT_PREFERENCE` (default: onion > hns > https > http)
+2. **Sort**: URLs are ordered by `TRANSPORT_PREFERENCE` (default: onion > hns > https > http); the values are `onion`, `hns`, `https` and `http`. A guessed Handshake name is placed just after whichever of `hns` and `https` is later in the list, and last if `hns` is not listed
 3. **Try**: each URL is tried in order; connection-level failures (DNS, ECONNREFUSED, timeout, TLS failure) trigger fallback to the next URL
 4. **Stop**: any HTTP response (including 402, 500) is returned immediately without fallback
 
 ### HNS Resolution
 
-Handshake names are resolved via DNS-over-HTTPS (RFC 8484 wire format) through the configured gateway. When standard DNS returns NXDOMAIN, the SSRF guard tries HNS resolution as a fallback. Resolved IPs are validated against blocked ranges before connecting.
+Handshake names are resolved via DNS-over-HTTPS (RFC 8484 wire format) through the configured gateway. When standard DNS returns NXDOMAIN, the SSRF guard tries HNS resolution as a fallback. Resolved IPs are validated against blocked ranges before connecting. `HNS_GATEWAY_URL` has a default (`https://query.hdns.io/`), so Handshake endpoints need no configuration. Under `SOCKS_PROXY` Handshake lookups are switched off, because the DNS-over-HTTPS query would go around the proxy; the proxy resolves every name instead.
 
 ### Credential Portability
 
-Credentials are keyed by service **pubkey** (from the kind 31402 event) and bound to the transport origins they were bought through. A macaroon obtained via a Tor hidden service works over the service's clearnet URL, and vice versa, when both were in the `urls` list at purchase. A credential is never sent to an origin it is not bound to, whatever pubkey the request names.
+When `l402-fetch` is given a service **pubkey** (from the kind 31402 event, as returned by `l402-search`), the credential is keyed by it; without one it is keyed by origin. Either way it is bound to the transport origins it was bought through. A macaroon obtained via a Tor hidden service works over the service's clearnet URL, and vice versa, when both were in the `urls` list at purchase. A credential is never sent to an origin it is not bound to, whatever pubkey the request names.
 
 ## Ecosystem
 

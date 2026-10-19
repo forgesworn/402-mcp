@@ -2,13 +2,15 @@
 
 Get 402-mcp running and make your first paid API call in under 5 minutes.
 
-## 1. Install
+## 1. Check that it starts
+
+There is no install step: `npx` fetches 402-mcp when your MCP client first starts it. To check that it launches, run it once:
 
 ```bash
 npx 402-mcp
 ```
 
-You should see the MCP server start. Press Ctrl+C to stop it; your MCP client will manage the process. Node.js 22.4 or newer is required.
+This starts a stdio MCP server that waits for a client on standard input, so it prints nothing useful in a terminal. Press Ctrl+C to stop it; your MCP client will manage the process. Node.js 22.4 or newer is required.
 
 ## 2. Connect to your MCP client
 
@@ -30,7 +32,7 @@ Add to your Claude Desktop MCP configuration (`~/Library/Application Support/Cla
 ```json
 {
   "mcpServers": {
-    "l402": {
+    "402-mcp": {
       "command": "npx",
       "args": ["402-mcp"]
     }
@@ -92,7 +94,7 @@ claude mcp add 402-mcp -e NWC_URI_FILE="$HOME/.402-mcp/wallet.nwc" -e MAX_AUTO_P
 ```json
 {
   "mcpServers": {
-    "l402": {
+    "402-mcp": {
       "command": "npx",
       "args": ["402-mcp"],
       "env": {
