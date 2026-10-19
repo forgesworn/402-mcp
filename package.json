@@ -1,6 +1,6 @@
 {
   "name": "402-mcp",
-  "version": "4.4.1",
+  "version": "4.4.2",
   "mcpName": "dev.forgesworn/402-mcp",
   "description": "L402 client MCP: AI agents discover paid APIs on Nostr, then pay for and consume Lightning and ecash payment-gated APIs within human-set spend limits (x402 support is experimental)",
   "type": "module",

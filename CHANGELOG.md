@@ -1,3 +1,11 @@
+## 4.4.2 (2026-10-19)
+
+### Bug Fixes
+
+- resolve low-severity doc and metadata gaps found in review (#69) (docs)
+
+
+
 ## 4.4.1 (2026-10-19)
 
 ### Bug Fixes
