@@ -96,7 +96,7 @@
     "url": "https://github.com/forgesworn/402-mcp.git"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.4.0"
   },
   "files": [
     "build",

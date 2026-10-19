@@ -9,7 +9,7 @@ Two complementary caps prevent runaway autonomous spending:
 - **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that.
 - **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
 
-Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls — concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
+Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls, concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
 
 The tracker also caps its internal entry list at 10,000 entries and evicts stale records to prevent unbounded memory growth.
 
@@ -42,7 +42,7 @@ Stored credentials (macaroons, preimages, payment hashes) are encrypted at rest 
 The 256-bit encryption key is sourced in priority order:
 
 1. **OS keychain.** On macOS the key is kept in the login Keychain through the built-in `security` command-line tool, and goes in on stdin, never as an argument. On other platforms the optional `keytar` module is tried (GNOME Keyring, Windows Credential Vault); it is archived upstream and often fails to load on current Node, in which case the file fallback is used. If `~/.402-mcp/encryption.key` already exists on macOS it takes precedence and is copied into the Keychain, so data encrypted under it stays readable.
-2. **File-based fallback** — if the OS keychain is unavailable, a random key is generated and written to `~/.402-mcp/encryption.key` with `0o600` permissions (owner read/write only). A warning is emitted at startup: the credentials are encrypted but the key is accessible to anyone with file access.
+2. **File-based fallback**: if the OS keychain is unavailable, a random key is generated and written to `~/.402-mcp/encryption.key` with `0o600` permissions (owner read/write only). A warning is emitted at startup: the credentials are encrypted but the key is accessible to anyone with file access.
 
 The credential store directory is created with `0o700` permissions. Writes use an atomic rename pattern (write to `.tmp`, then `renameSync`) to prevent data loss on crash. Legacy plaintext credential files are automatically migrated to encrypted format on first load.
 
@@ -51,7 +51,7 @@ The credential store directory is created with `0o700` permissions. Writes use a
 Before any credential is stored, the preimage is validated:
 
 - Must be a non-empty string containing only hexadecimal characters (`[0-9a-fA-F]`).
-- Must be exactly 64 hex characters (32 bytes — the size of a SHA-256 preimage).
+- Must be exactly 64 hex characters (32 bytes, the size of a SHA-256 preimage).
 - Macaroons are validated against a base64-safe character set (`[A-Za-z0-9+/_\-=]`).
 
 These checks prevent header injection attacks, since preimages and macaroons are sent raw in `Authorization: L402 {macaroon}:{preimage}` headers.
@@ -63,45 +63,45 @@ When running in HTTP mode (`TRANSPORT=http`), the server applies several layers 
 - **Bearer token**: every `/mcp` request must carry `Authorization: Bearer <token>`, compared in constant time. The token is read from `HTTP_AUTH_TOKEN_FILE`, a private `0600` file, following the same rules as `NWC_URI_FILE`; a token in the environment is refused, and the server will not start in http mode without one.
 - **DNS rebinding protection**: the MCP SDK's host validation is on. Only a `Host` header naming a loopback address with the port (on a loopback bind), the bound address, or an entry in `HTTP_ALLOWED_HOSTS` is answered, so a web page that rebinds its own name to `127.0.0.1` cannot drive the server from the user's browser.
 - **Loopback-only binding**: the server binds to `127.0.0.1` by default. A warning is emitted if `BIND_ADDRESS` is changed to a non-loopback address, since the token would then cross the network; use a TLS reverse proxy.
-- **Rate limiting** — a sliding-window rate limiter allows 100 requests per 60 seconds per IP address. The bucket map is capped at 10,000 entries and stale buckets are evicted every 60 seconds to prevent memory exhaustion from IP cycling.
-- **Security headers** — every response includes:
+- **Rate limiting**: a sliding-window rate limiter allows 100 requests per 60 seconds per IP address. The bucket map is capped at 10,000 entries and stale buckets are evicted every 60 seconds to prevent memory exhaustion from IP cycling.
+- **Security headers**: every response includes:
   - `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'`
   - `X-Frame-Options: DENY`
   - `X-Content-Type-Options: nosniff`
   - `Cache-Control: no-store`
-- **Request size limit** — the JSON body parser caps input at 100 KB.
-- **Trust proxy disabled** — `trust proxy` is set to `false` to prevent `X-Forwarded-For` spoofing of the rate limiter.
-- **CORS control** — `CORS_ORIGIN` defaults to disabled. A warning is emitted if set to `*` (wildcard), which would allow any website to make cross-origin requests.
-- **TLS enforcement** — a warning is emitted if `NODE_TLS_REJECT_UNAUTHORIZED=0` is detected, as this disables certificate validation and re-enables HTTPS DNS rebinding attacks.
+- **Request size limit**: the JSON body parser caps input at 100 KB.
+- **Trust proxy disabled**: `trust proxy` is set to `false` to prevent `X-Forwarded-For` spoofing of the rate limiter.
+- **CORS control**: `CORS_ORIGIN` defaults to disabled. A warning is emitted if set to `*` (wildcard), which would allow any website to make cross-origin requests.
+- **TLS enforcement**: if `NODE_TLS_REJECT_UNAUTHORIZED=0` is set, 402-mcp refuses to start unless `ALLOW_INSECURE_TLS=true` or `SSRF_ALLOW_PRIVATE=true` acknowledges the risk, because disabling certificate validation re-enables HTTPS DNS rebinding attacks. With an acknowledgement it starts and logs a warning.
 
 ## Fetch resilience
 
 All outbound HTTP uses the resilient fetch wrapper (`src/fetch/resilient-fetch.ts`), which provides:
 
-- **Timeout** — configurable per-request timeout (default 30 seconds) enforced via `AbortController`. The timeout is applied per redirect hop, and a cumulative timer across the entire redirect chain prevents a malicious server from stalling each hop for the full timeout.
-- **Retry with backoff** — configurable retry count (default 2 retries) with exponential backoff and jitter. Server errors (5xx) are retried by default. SSRF errors are never retried.
-- **Retry disabled for money-mutating requests** — POST requests that involve payments pass `{ retries: 0 }` to prevent double-spend from retried payment submissions. Polling fetches (e.g. human-in-the-loop payment polling) also disable retry because the poll loop handles transience.
-- **Redirect limits** — a maximum of 5 redirects are followed. Each redirect target is SSRF-validated independently.
-- **HTTPS downgrade protection** — redirects from HTTPS to HTTP are blocked with a `DowngradeError`.
-- **Response size limits** — configurable maximum response body size (default 10 MB). Responses exceeding the limit are terminated early via stream cancellation. The `Content-Length` header is checked first for fast rejection before streaming.
+- **Timeout**: configurable per-request timeout (default 30 seconds) enforced via `AbortController`. The timeout is applied per redirect hop, and a cumulative timer across the entire redirect chain prevents a malicious server from stalling each hop for the full timeout.
+- **Retry with backoff**: configurable retry count (default 2 retries) with exponential backoff and jitter. Server errors (5xx) are retried by default. SSRF errors are never retried.
+- **Retry disabled for money-mutating requests**: POST requests that involve payments pass `{ retries: 0 }` to prevent double-spend from retried payment submissions. Polling fetches (e.g. human-in-the-loop payment polling) also disable retry because the poll loop handles transience.
+- **Redirect limits**: a maximum of 5 redirects are followed. Each redirect target is SSRF-validated independently.
+- **HTTPS downgrade protection**: redirects from HTTPS to HTTP are blocked with a `DowngradeError`.
+- **Response size limits**: configurable maximum response body size (default 10 MB). Responses exceeding the limit are terminated early via stream cancellation. The `Content-Length` header is checked first for fast rejection before streaming.
 
 ## Input validation
 
-- **Preimage hex validation** — preimages are validated as strict hex before storage (see Credential encryption above).
-- **Macaroon base64 validation** — macaroons are validated against a base64-safe character set before storage.
-- **Blocked hop-by-hop headers** — user-supplied headers on `l402-fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
-- **Zod schema validation** — all MCP tool inputs are validated with Zod schemas at the tool registration layer, rejecting malformed or unexpected input before any handler logic executes.
-- **Path traversal prevention** — `CREDENTIAL_STORE`, `CASHU_TOKENS` and `LNURLCASH_NOTES` paths are validated to ensure they resolve within the user's home directory.
-- **Bearer note handling** — an LNURLcash note secret *is* the money, so it is encrypted at rest alongside credentials, never accepted from an environment variable, and never included in an error or log line. Because note secrets travel in the query string, exceptions from the HTTP layer are caught and replaced rather than surfaced.
-- **Crash safety on split** — a split registers new notes at the mint by hash only; the mint never learns the secrets. Both child secrets are therefore persisted *before* the split request is sent, so a crash mid-split cannot strand value at a hash whose preimage was never written. Notes left provisional, or melting with an unknown outcome, are reconciled against the mint before the next payment.
-- **File-only NWC bearer** — raw `NWC_URI` values are refused. `NWC_URI_FILE`
+- **Preimage hex validation**: preimages are validated as strict hex before storage (see Credential encryption above).
+- **Macaroon base64 validation**: macaroons are validated against a base64-safe character set before storage.
+- **Blocked hop-by-hop headers**: user-supplied headers on `l402-fetch` are filtered against a blocklist of hop-by-hop and security-sensitive headers (`host`, `transfer-encoding`, `connection`, `upgrade`, `proxy-authorization`, `te`, `trailer`) to prevent request smuggling.
+- **Zod schema validation**: all MCP tool inputs are validated with Zod schemas at the tool registration layer, rejecting malformed or unexpected input before any handler logic executes.
+- **Path traversal prevention**: `CREDENTIAL_STORE`, `CASHU_TOKENS` and `LNURLCASH_NOTES` paths are validated to ensure they resolve within the user's home directory.
+- **Bearer note handling**: an LNURLcash note secret *is* the money, so it is encrypted at rest alongside credentials, never accepted from an environment variable, and never included in an error or log line. Because note secrets travel in the query string, exceptions from the HTTP layer are caught and replaced rather than surfaced.
+- **Crash safety on split**: a split registers new notes at the mint by hash only; the mint never learns the secrets. Both child secrets are therefore persisted *before* the split request is sent, so a crash mid-split cannot strand value at a hash whose preimage was never written. Notes left provisional, or melting with an unknown outcome, are reconciled against the mint before the next payment.
+- **File-only NWC bearer**: raw `NWC_URI` values are refused. `NWC_URI_FILE`
   must reference a private, regular `0600` file no larger than 8192 bytes; the
   path is removed from `process.env` before later configuration can fail.
-- **Authenticated NWC settlement** — `@forgesworn/nwc-kit` requires signed
+- **Authenticated NWC settlement**: `@forgesworn/nwc-kit` requires signed
   wallet capability and response events over NIP-44 v2. 402-mcp then uses
   farrier-kit to verify that the returned preimage hashes to the challenged
   BOLT-11 payment hash before it reports payment or stores a credential.
-- **No blind payment retry** — publication failures, response timeouts,
+- **No blind payment retry**: publication failures, response timeouts,
   aborts, malformed wallet responses, and missing or invalid settlement proofs
   are treated as unknown after submission. Auto-pay stops instead of falling
   through to another rail or releasing the spend reservation.
