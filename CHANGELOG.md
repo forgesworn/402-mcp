@@ -1,3 +1,11 @@
+## 4.4.1 (2026-10-19)
+
+### Bug Fixes
+
+- align docs with source on tools, payers, env vars and exports (#68) (docs)
+
+
+
 ## 4.4.0 (2026-10-12)
 
 ### Features
