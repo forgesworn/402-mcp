@@ -4,12 +4,15 @@
 
 ## Spend safety
 
-Two complementary caps prevent runaway autonomous spending:
+Three complementary caps prevent runaway autonomous spending:
 
-- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that.
-- **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap.
+- **`MAX_AUTO_PAY_SATS`** (default 1000) caps any single autonomous payment. 402-mcp will not pay anything dearer from a configured wallet: the price and invoice go back to the agent, which should ask you. Whether it asks is up to the agent; 402-mcp does not enforce that. `0` disables auto-pay.
+- **`MAX_SPEND_PER_MINUTE_SATS`** (default 10000) enforces a rolling 60-second window cap across all payments, preventing rapid successive payments from exceeding a total budget even if each individual payment is below the per-payment cap. `0` blocks all auto-pay.
+- **`MAX_SPEND_PER_DAY_SATS`** (default 5000) enforces a rolling 24-hour window cap. The window is kept in `~/.402-mcp/spend-ledger.json`, so restarting the server does not reset it. `0` blocks all auto-pay.
 
-Both limits are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls, concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
+At the defaults the daily cap is lower than the per-minute cap, and spend in any minute also counts towards the day, so the per-minute cap never binds until you lower it or raise the daily cap.
+
+The spend windows are enforced via an atomic `tryRecord(sats, limit)` method on the `SpendTracker`. This single-call pattern checks *and* records the spend in one step, closing a TOCTOU (time-of-check-to-time-of-use) race that existed when `wouldExceed()` and `record()` were separate calls, concurrent callers could both pass the check before either recorded. A definitely rejected payment releases the reservation. If submission may have occurred but settlement cannot be proved, the reservation is retained and the tool returns `paymentState: "unknown"`; callers must reconcile the original invoice before retrying.
 
 The tracker also caps its internal entry list at 10,000 entries and evicts stale records to prevent unbounded memory growth.
 

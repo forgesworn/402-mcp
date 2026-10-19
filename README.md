@@ -5,7 +5,7 @@
 [![MIT licence](https://img.shields.io/badge/licence-MIT-blue.svg)](./LICENSE)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-blue)](https://www.typescriptlang.org/)
 [![Node](https://img.shields.io/badge/Node-%3E%3D22.4-green)](https://nodejs.org/)
-[![Coverage](https://img.shields.io/badge/coverage-85%25-brightgreen)](./docs/security.md)
+![Statement coverage 90%, measured with npm run test:coverage](https://img.shields.io/badge/statement%20coverage-90%25-brightgreen)
 [![Nostr](https://img.shields.io/badge/Nostr-Zap%20me-purple)](https://primal.net/p/npub1mgvlrnf5hm9yf0n5mf9nqmvarhvxkc6remu5ec3vf8r0txqkuk7su0e7q2)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/TheCryptoDonkey?logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/TheCryptoDonkey)
 
@@ -18,23 +18,34 @@ L402 client MCP that gives AI agents economic agency. Discover, pay for, and con
 
 ## Quick start
 
-**1. Install**
+There is no install step: `npx` fetches 402-mcp when your MCP client first starts it. Running `npx 402-mcp` by hand only starts a stdio server that waits for a client on standard input (stop it with Ctrl+C), so do that to check it launches, not to use it.
 
-```bash
-npx 402-mcp
-```
+**1. Connect it to your MCP client**
 
-**2. Connect to Claude Code**
+Claude Code:
 
 ```bash
 claude mcp add 402-mcp -- npx 402-mcp
 ```
 
-**3. Try it**
+Claude Desktop or Cursor, in the MCP configuration file:
+
+```json
+{
+  "mcpServers": {
+    "402-mcp": {
+      "command": "npx",
+      "args": ["402-mcp"]
+    }
+  }
+}
+```
+
+**2. Try it**
 
 Ask Claude: *"Search for paid joke APIs using l402-search"*, no wallet needed, just discovery.
 
-**4. Pay for calls (optional): connect an NWC wallet**
+**3. Pay for calls (optional): connect an NWC wallet**
 
 402-mcp reads the Nostr Wallet Connect URI from a private file, never from an environment variable or a command line. Create the file with owner-only permissions first, then paste the URI into it with an editor so it stays out of your shell history:
 
@@ -60,7 +71,24 @@ claude mcp remove 402-mcp
 claude mcp add 402-mcp -e NWC_URI_FILE="$HOME/.402-mcp/wallet.nwc" -e MAX_AUTO_PAY_SATS=1000 -- npx 402-mcp
 ```
 
-For Claude Desktop or Cursor, put the same absolute path in the `env` block of the server entry. A raw `NWC_URI` variable is refused at startup. For Cashu, LNURLcash or no wallet at all, and a first paid call, see the [full quickstart guide](./docs/quickstart.md).
+For Claude Desktop or Cursor, add an `env` block to the same server entry. JSON does not expand `~` or `$HOME`, so write out the absolute path of the file you created:
+
+```json
+{
+  "mcpServers": {
+    "402-mcp": {
+      "command": "npx",
+      "args": ["402-mcp"],
+      "env": {
+        "NWC_URI_FILE": "/absolute/path/to/.402-mcp/wallet.nwc",
+        "MAX_AUTO_PAY_SATS": "1000"
+      }
+    }
+  }
+}
+```
+
+A raw `NWC_URI` variable is refused at startup. For Cashu, LNURLcash or no wallet at all, and a first paid call, see the [full quickstart guide](./docs/quickstart.md).
 
 Requires Node.js 22.4 or newer.
 
@@ -108,8 +136,8 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 | `NWC_URI_FILE` | - | Path to a private `0600` file containing the NWC bearer URI |
 | `CASHU_TOKENS` | - | Path to Cashu token store file. Must be within your home directory |
 | `LNURLCASH_NOTES` | - | Path to LNURLcash bearer note store file (LUD-25). Must be within your home directory |
-| `MAX_AUTO_PAY_SATS` | 1000 | Most a single automatic payment may cost. Anything dearer is not paid; the challenge goes back to the agent |
-| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Automatic spend allowed in any rolling 60 seconds. `0` blocks all auto-pay |
+| `MAX_AUTO_PAY_SATS` | 1000 | Most a single automatic payment may cost. Anything dearer is not paid; the challenge goes back to the agent. `0` disables auto-pay |
+| `MAX_SPEND_PER_MINUTE_SATS` | 10000 | Automatic spend allowed in any rolling 60 seconds. `0` blocks all auto-pay. At the defaults the daily cap below binds first (see [Spending limits](#spending-limits)) |
 | `MAX_SPEND_PER_DAY_SATS` | 5000 | Automatic spend allowed in any rolling 24 hours, kept in `~/.402-mcp/spend-ledger.json` so a restart does not reset it. `0` blocks all auto-pay |
 | `CREDENTIAL_STORE` | `~/.402-mcp/credentials.json` | Persistent macaroon/credential storage. Must be within your home directory |
 | `TRANSPORT` | `stdio` | Transport mode: `stdio` or `http` |
@@ -136,11 +164,13 @@ For detailed architecture and payment flow diagrams, see [docs/architecture.md](
 
 When a kind 31402 event advertises multiple URLs (one per transport), 402-mcp selects the best one based on your configuration:
 
-1. **Preference first**: URLs are tried in `TRANSPORT_PREFERENCE` order, `onion,hns,https,http` by default. Use `onion`, `hns`, `https` and `http` as the values. A URL counts as `hns` when its TLD is `.hns`. One whose TLD is merely unfamiliar (`.pub`, `.fyi`) is more likely an ICANN name, so it is tried just after `https`.
+1. **Preference first**: URLs are tried in `TRANSPORT_PREFERENCE` order, `onion,hns,https,http` by default. Use `onion`, `hns`, `https` and `http` as the values; there is no value for anything else. A URL counts as `hns` when its TLD is `.hns`. One whose TLD is merely unfamiliar (`.pub`, `.fyi`) is more likely an ICANN name, so it has no value of its own: it counts as a guessed `hns` name and is tried just after whichever of `hns` and `https` comes later in your order, which is just after `https` by default. If you leave `hns` out of `TRANSPORT_PREFERENCE`, such URLs go last.
 2. **Capability filter**: `.onion` URLs are skipped unless `TOR_PROXY` or `SOCKS_PROXY` is set, so without a proxy the default order starts at HNS and clearnet.
 3. **Availability fallback**: if a transport is unreachable (connection refused, timeout), the next URL is tried.
 
-Services can announce multiple endpoints for the **same service** (same pricing, same macaroon key) on different transports. This is purely for censorship resistance; you do not need to re-authenticate when switching transports. To reach Tor or HNS endpoints you must configure the corresponding proxy/gateway env vars above.
+Services can announce multiple endpoints for the **same service** (same pricing, same macaroon key) on different transports. This is purely for censorship resistance; you do not need to re-authenticate when switching transports. `.onion` endpoints need `TOR_PROXY` or `SOCKS_PROXY`. Handshake endpoints need no configuration, because `HNS_GATEWAY_URL` has a default, except under `SOCKS_PROXY`, which switches Handshake lookups off (see [Tor and SOCKS5](#tor-and-socks5)).
+
+**Credentials across transports.** When `l402-fetch` is given a service's `pubkey` (from `l402-search`), it stores and looks up the credential under that pubkey, so one purchase serves every transport URL passed in `urls`. Without a `pubkey` the credential is keyed by the request's origin. Either way the credential records the origins it was bought through and is sent only to those, whatever pubkey a later request names. A macaroon bought through a Tor hidden service therefore works on the clearnet URL when both were in `urls` at purchase, and is never sent to any other host.
 
 ### Tor and SOCKS5
 
@@ -234,16 +264,16 @@ LNURLcash is checked first because a bearer note is already money in hand, so pa
 
 402-mcp checks every automatic payment against these, and the agent can read them with `l402-config`:
 
-- `MAX_AUTO_PAY_SATS` caps each payment. A dearer challenge is returned to the agent unpaid.
+- `MAX_AUTO_PAY_SATS` caps each payment. A dearer challenge is returned to the agent unpaid. `0` disables auto-pay: every priced challenge goes back to the agent.
 - `maxCostSats` on `l402-fetch` lowers that cap for one call, so the price shown by `l402-fetch-preview` is binding. It can never raise it.
-- `MAX_SPEND_PER_MINUTE_SATS` and `MAX_SPEND_PER_DAY_SATS` cap total automatic spend over rolling windows. The daily window is persisted, so restarting the server does not reset it. `0` in either blocks auto-pay entirely.
+- `MAX_SPEND_PER_MINUTE_SATS` and `MAX_SPEND_PER_DAY_SATS` cap total automatic spend over rolling windows. The daily window is persisted, so restarting the server does not reset it. `0` in either blocks auto-pay entirely. At the defaults (10,000 per minute, 5,000 per day) the daily cap is the lower one, and spend in any minute also counts towards the day, so the per-minute cap never binds until you lower it or raise the daily cap.
 - A payment whose outcome is unknown pauses auto-pay to that service until `l402-reconcile` resolves it, so the same thing is not bought twice.
 
 **The real hard limit is the budget on your NWC connection.** Everything above is enforced in software by this process, on the machine it runs on. Most NWC wallets let you set a spending budget when you create the connection; set one, because that is the limit a bug or a misbehaving agent cannot raise. For Cashu and LNURLcash, the hard limit is what you put in the token or note store.
 
 ## Privacy
 
-402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest). There are no accounts, no tracking and no analytics, and 402-mcp has no server of its own. It does talk to parties other than the APIs you call:
+402-mcp stores credentials locally on your machine only (`~/.402-mcp/credentials.json`, encrypted at rest with AES-256-GCM). The encryption key lives in the OS keychain when one is available (the macOS Keychain through the `security` tool; elsewhere the optional `keytar` module, which often fails to load on current Node). Otherwise it falls back to a file, `~/.402-mcp/encryption.key`, created with `0600` permissions, and 402-mcp warns on startup that the keychain was unavailable; anyone who can read that file can decrypt the store. There are no accounts, no tracking and no analytics, and 402-mcp has no server of its own. It does talk to parties other than the APIs you call:
 
 - **Nostr relays.** `l402-search` subscribes to public relays (by default relay.damus.io, relay.primal.net and nos.lol) for service announcements, sending only the topic filter you give it. The payment-method filter and the query text are matched locally, so relays never see them.
 - **A Handshake resolver.** When ordinary DNS cannot find a host name, it is looked up at `HNS_GATEWAY_URL` (`https://query.hdns.io/` by default), which therefore sees that name. This is off under `SOCKS_PROXY`.
@@ -306,9 +336,11 @@ Browse live L402 services at [402.pub](https://402.pub), the decentralised marke
 | **Payer methods** | NWC + Cashu + LNURLcash + human fallback | Lightning only |
 | **Node required?** | No, connects to any NWC wallet | Yes, runs LND |
 | **Server compatibility** | Any L402 server | Aperture-focused |
-| **Spend safety** | Per-payment cap, per-call max cost, rolling 60s and persisted 24h windows | Per-call max-cost |
+| **Spend safety** | Per-payment cap, per-call max cost, rolling 60s and persisted 24h windows | Per-call max-cost (`--max-cost`) |
 | **Credential storage** | Encrypted at rest (AES-256-GCM) | File permissions |
 | **Privacy** | No PII, SSRF protection, error sanitisation | Standard |
+
+The Lightning Labs spend-safety cell comes from the lnget documentation in [lightning-agent-tools](https://github.com/lightninglabs/lightning-agent-tools): `--max-cost` sets the most lnget will auto-pay for a single request ([docs/l402-and-lnget.md](https://github.com/lightninglabs/lightning-agent-tools/blob/main/docs/l402-and-lnget.md)), and that page documents no budget across requests. The other cells in that column are not sourced here.
 
 Use Lightning Labs' tools if you want agents that **run their own Lightning node**. Use 402-mcp if you want agents that **pay from any wallet without infrastructure**.
 

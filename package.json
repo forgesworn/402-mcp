@@ -2,7 +2,7 @@
   "name": "402-mcp",
   "version": "4.4.1",
   "mcpName": "dev.forgesworn/402-mcp",
-  "description": "L402 client MCP: AI agents discover, pay for and consume Lightning and ecash payment-gated APIs (x402 support is experimental)",
+  "description": "L402 client MCP: AI agents discover paid APIs on Nostr, then pay for and consume Lightning and ecash payment-gated APIs within human-set spend limits (x402 support is experimental)",
   "type": "module",
   "bin": {
     "402-mcp": "./build/index.js"
@@ -84,7 +84,6 @@
     "ai-agent",
     "autonomous-payments",
     "macaroon",
-    "stablecoin",
     "lnurlcash",
     "lud-25",
     "bearer-notes"
@@ -103,6 +102,10 @@
     "src/widgets/dist",
     "LICENSE",
     "README.md",
+    "CONTRIBUTING.md",
+    "docs/quickstart.md",
+    "docs/architecture.md",
+    "docs/security.md",
     "llms.txt",
     "llms-full.txt"
   ],
