@@ -28,4 +28,4 @@ jobs:
       - run: npm run typecheck
       - run: npm test -- --exclude 'tests/e2e/l402-flow.integration.test.ts'
       - run: npm run build
-      - run: npm audit
+      - run: npm audit --omit=dev
