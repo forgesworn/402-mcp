@@ -1,3 +1,11 @@
+## 4.5.0 (2026-11-14)
+
+### Features
+
+- own QR encoder from @forgesworn/qr
+
+
+
 ## 4.4.2 (2026-10-19)
 
 ### Bug Fixes
