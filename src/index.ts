@@ -45,6 +45,7 @@ import { createSocksFetch } from './fetch/socks-proxy.js'
 import { selectTransports } from './fetch/transport.js'
 import { resolveHns as resolveHnsBase } from './fetch/hns-resolve.js'
 import { SpendTracker } from './spend-tracker.js'
+import { renderInvoiceQr } from './qr.js'
 
 const require = createRequire(import.meta.url)
 const { version } = require('../package.json') as { version: string }
@@ -117,14 +118,8 @@ if (lnurlcashNoteStore) {
 }
 
 // QR generation for human-in-the-loop (text for terminals, PNG for GUI clients)
-async function generateQr(invoice: string): Promise<{ png: string; text: string }> {
-  const QRCode = await import('qrcode')
-  const upper = invoice.toUpperCase()
-  const [png, text] = await Promise.all([
-    QRCode.toDataURL(upper, { type: 'image/png', margin: 2 }),
-    QRCode.toString(upper, { type: 'terminal', small: true, margin: 2, errorCorrectionLevel: 'L' }),
-  ])
-  return { png, text }
+function generateQr(invoice: string): Promise<{ png: string; text: string }> {
+  return Promise.resolve().then(() => renderInvoiceQr(invoice))
 }
 
 walletProviders.push(createHumanWallet({
