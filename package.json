@@ -38,6 +38,7 @@
   "dependencies": {
     "@cashu/cashu-ts": "^3.6.1",
     "@forgesworn/nwc-kit": "0.1.9",
+    "@forgesworn/qr": "^0.1.0",
     "@modelcontextprotocol/ext-apps": "^1.3.1",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "@scure/base": "^2.0.0",
@@ -46,7 +47,6 @@
     "express": "^5.2.1",
     "farrier-kit": "1.1.3",
     "nostr-tools": "^2.12.0",
-    "qrcode": "^1.5.4",
     "undici": "^7.29.1",
     "zod": "^4.3.6"
   },
@@ -59,7 +59,6 @@
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.0",
     "@types/node": "^24.12.0",
-    "@types/qrcode": "^1.5.5",
     "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^10.0.3",
     "typescript": "^5.7.0",
@@ -95,7 +94,7 @@
     "url": "https://github.com/forgesworn/402-mcp.git"
   },
   "engines": {
-    "node": ">=22.4.0"
+    "node": ">=22.13.0"
   },
   "files": [
     "build",
