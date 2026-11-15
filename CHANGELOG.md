@@ -1,3 +1,11 @@
+## 4.5.1 (2026-11-15)
+
+### Bug Fixes
+
+- pin QR 0.2.0 for code generation (#90)
+
+
+
 ## 4.5.0 (2026-11-14)
 
 ### Features
