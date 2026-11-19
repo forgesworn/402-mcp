@@ -6,6 +6,13 @@
 
 Agents can also discover paid APIs without knowing URLs upfront. The `l402-search` tool queries Nostr relays for kind 31402 service announcements, a decentralised registry of L402-enabled services. Discovered services may advertise multiple transport endpoints (clearnet HTTPS, Tor .onion, Handshake HNS domains). The agent automatically selects the best available transport and falls back through alternatives on connection failure, .onion endpoints need `TOR_PROXY` or `SOCKS_PROXY`; clearnet needs no configuration, and neither does HNS (`HNS_GATEWAY_URL` has a default), except under `SOCKS_PROXY`, which switches Handshake lookups off.
 
+## ForgeSworn ecosystem
+
+- [ForgeSworn library guide](https://forgesworn.dev/llms.txt): Find related libraries, tools and integration guides by task and runtime.
+- [ForgeSworn on GitHub](https://github.com/forgesworn): Browse the organisation’s public repositories.
+- [Project source](https://github.com/forgesworn/402-mcp): Canonical source repository, documentation and release information.
+- [toll-booth](https://github.com/forgesworn/toll-booth): Add payment gating to the server the MCP client will call.
+
 ## Getting Started
 
 Run instantly with no configuration required (Node.js 22.4 or newer):
